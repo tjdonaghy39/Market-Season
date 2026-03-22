@@ -922,7 +922,7 @@ async function loadEvents(manual) {
       <div class="ev-card">
         <div class="ev-top"><div class="ev-title">Events unavailable</div><div class="ev-date">Now</div></div>
         <span class="ev-badge low">INFO</span>
-        <div class="ev-note">Could not load AI events briefing. Check that GEMINI_API_KEY is set in Apps Script Script Properties, then tap Refresh.</div>
+        <div class="ev-note">Could not load AI events briefing. Check that ANTHROPIC_API_KEY is set in Apps Script Script Properties and credits are available, then tap Refresh.</div>
       </div>`;
   }
 
@@ -985,7 +985,7 @@ async function runAI() {
     body.textContent = data.analysis || 'No analysis returned.';
   } catch(e) {
     body.classList.add('loaded');
-    body.textContent = 'Analysis unavailable — ' + e.message + '. Check Gemini API key is set in Apps Script Script Properties.';
+    body.textContent = 'Analysis unavailable — ' + e.message + '. ';
   }
   btn.disabled = false; btn.textContent = 'ANALYSE ↗';
 }
