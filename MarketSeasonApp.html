@@ -436,7 +436,7 @@ async function fetchData(manual = false) {
   document.getElementById('errBanner').classList.remove('show');
 
   try {
-    if (SHEET_API_URL === 'YOUR_APPS_SCRIPT_URL_HERE') {
+    if (SHEET_API_URL === 'https://script.google.com/macros/s/AKfycbxlhY6Lfh9f6Ym9pBwid-Kyps-wtHKRYzCTLcn7nc_2P_1fMNwh9CloYKQxOk1S9bhWIg/exec') {
       // Demo mode — use sample data
       liveData = getDemoData();
     } else {
@@ -943,34 +943,67 @@ async function runAI() {
   body.classList.remove('loaded');
   body.innerHTML = 'Analysing<span class="cursor"></span>';
 
-  const d = liveData;
-  const score = d?.engine?.score ?? '−7';
-  const vix = d?.volatility?.vix?.today ?? '21.9';
-  const goldHeat = d?.commodities?.gld?.heat ?? '+0.016';
-  const spxHeat = d?.equities?.spx?.heat ?? '−0.022';
-  const tipHeat = d?.bonds?.tip?.heat ?? '+0.005';
-  const oilD60 = d?.commodities?.uso?.d60 ?? '+66%';
+  const d     = liveData;
+  const score = d?.engine?.score ?? -7;
+  const vix   = d?.volatility?.vix?.today ?? 0;
+  const today = new Date().toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
 
-  const prompt = `You are a senior global macro strategist providing a mobile daily briefing. Be direct, crisp, and specific. 3-4 sentences maximum.
+  // Pull all available live signals
+  const spxHeat    = d?.equities?.spx?.heat;
+  const spxD60     = d?.equities?.spx?.d60;
+  const goldHeat   = d?.commodities?.gld?.heat;
+  const goldD60    = d?.commodities?.gld?.d60;
+  const tipHeat    = d?.bonds?.tip?.heat;
+  const tltHeat    = d?.bonds?.tlt?.heat;
+  const oilD60     = d?.commodities?.uso?.d60;
+  const copperHeat = d?.cycleRatios?.cper_gld?.heat;
+  const vixHeat    = d?.volatility?.vix?.heat;
+  const vixD60     = d?.volatility?.vix?.d60;
+  const uupHeat    = d?.fx?.uup?.heat;
+  const xlyHeat    = d?.cycleRatios?.xly_xlp?.heat;
+  const season     = d?.engine?.season ?? '';
+  const focus1     = d?.engine?.focus1 ?? '';
 
-Live data ${new Date().toLocaleDateString('en-GB')}: Season score ${score}/10 (trough/stagflation). S&P heat ${spxHeat}, Gold heat ${goldHeat}, TIPS heat ${tipHeat}, VIX ${vix} (heat rising +44% 60D), Oil USO +${oilD60} 60D (Hormuz closure). Fed holds today at 3.50–3.75% (92% priced). UK CPI tomorrow expected 3.6%.
+  const fmt = v => v != null && !isNaN(v) ? (v >= 0 ? '+' : '') + v.toFixed(4) : 'n/a';
+  const fmtPct = v => v != null && !isNaN(v) ? (v >= 0 ? '+' : '') + (v*100).toFixed(1) + '%' : 'n/a';
 
-Allocation: avoid equities, overweight linkers + gold + short bonds, long bonds neutral (stagflation override), HY avoid.
+  const prompt = `Today is ${today}. You are a senior global macro strategist providing a concise mobile daily briefing. Use web search to check what key market events happened or are happening this week that are relevant to the current positioning.
 
-In 3-4 sentences: what does the score mean today, why does this environment specifically favour linkers over long bonds, and what from the Fed at 2pm ET is most important to watch. No bullet points. Plain sentences.`;
+Current live market data:
+- Season: ${season} | Score: ${score}/10
+- S&P 500: heat ${fmt(spxHeat)}, 60D ${fmtPct(spxD60)}
+- Gold: heat ${fmt(goldHeat)}, 60D ${fmtPct(goldD60)}
+- US TIPS: heat ${fmt(tipHeat)}
+- TLT long bond: heat ${fmt(tltHeat)}
+- Oil USO: 60D ${fmtPct(oilD60)}
+- Copper/Gold ratio: heat ${fmt(copperHeat)}
+- VIX: ${vix?.toFixed ? vix.toFixed(1) : vix}, heat ${fmt(vixHeat)}, 60D ${fmtPct(vixD60)}
+- USD (UUP): heat ${fmt(uupHeat)}
+- XLY/XLP cycle: heat ${fmt(xlyHeat)}
+
+Current allocation: ${focus1}
+
+Write 3-4 crisp sentences: (1) what the current score and signals mean right now, (2) the single most important market event or development this week and what it means for the defensive positioning, (3) one specific thing to watch in the next 24-48 hours that could change the signal. No bullet points. No stale references — only what is current as of today.`;
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:300, messages:[{role:'user',content:prompt}] })
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 350,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        messages: [{ role: 'user', content: prompt }]
+      })
     });
     const data = await res.json();
+    // Extract text blocks only (skip tool use blocks)
+    const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
     body.classList.add('loaded');
-    body.textContent = data.content?.[0]?.text || 'Analysis unavailable.';
+    body.textContent = text || 'Analysis unavailable.';
   } catch(e) {
     body.classList.add('loaded');
-    body.textContent = `Score ${score}: all five sub-indicators negative — stagflationary contraction confirmed. Linkers win over long bonds here because rates held while inflation rises, meaning real yields compress and the inflation principal uplift on linkers outweighs their duration drag — unlike TLT which falls in price without any compensating inflation benefit. From the Fed today, watch not the rate decision (fully priced) but the dot plot: any hike advocates showing up would be the clearest confirmation of the stagflation thesis and the strongest buy signal for both gold and linkers into tomorrow.`;
+    body.textContent = `Score ${score}/10: all five sub-indicators negative, stagflationary contraction confirmed. Linkers outperform long bonds here because rates are held while inflation rises — real yields compress and the inflation principal uplift offsets duration drag, unlike TLT which falls without compensation. Check the Events tab for this week's key releases and their implications for your positioning.`;
   }
   btn.disabled = false; btn.textContent = 'ANALYSE ↗';
 }
@@ -1086,7 +1119,7 @@ window.addEventListener('load', () => {
   document.getElementById('refreshStatus').textContent = 'demo · connecting...';
 
   // Attempt live fetch
-  if (SHEET_API_URL !== 'YOUR_APPS_SCRIPT_URL_HERE') {
+  if (SHEET_API_URL !== 'https://script.google.com/macros/s/AKfycbxlhY6Lfh9f6Ym9pBwid-Kyps-wtHKRYzCTLcn7nc_2P_1fMNwh9CloYKQxOk1S9bhWIg/exec') {
     fetchData();
   } else {
     document.getElementById('refreshStatus').textContent = 'demo mode · configure API';
@@ -1098,7 +1131,7 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     const lastRefresh = liveData?.refreshed ? new Date(liveData.refreshed) : null;
     const stale = !lastRefresh || (Date.now() - lastRefresh.getTime()) > REFRESH_INTERVAL_MS;
-    if (stale && SHEET_API_URL !== 'YOUR_APPS_SCRIPT_URL_HERE') fetchData();
+    if (stale && SHEET_API_URL !== 'https://script.google.com/macros/s/AKfycbxlhY6Lfh9f6Ym9pBwid-Kyps-wtHKRYzCTLcn7nc_2P_1fMNwh9CloYKQxOk1S9bhWIg/exec') fetchData();
   }
 });
 </script>
