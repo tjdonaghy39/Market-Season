@@ -436,11 +436,13 @@ async function fetchData(manual = false) {
   document.getElementById('errBanner').classList.remove('show');
 
   try {
-    if (SHEET_API_URL === 'https://script.google.com/macros/s/AKfycbxlhY6Lfh9f6Ym9pBwid-Kyps-wtHKRYzCTLcn7nc_2P_1fMNwh9CloYKQxOk1S9bhWIg/exec') {
+    if (SHEET_API_URL === 'YOUR_APPS_SCRIPT_URL_HERE') {
       // Demo mode — use sample data
       liveData = getDemoData();
     } else {
-      const res = await fetch(SHEET_API_URL + '?t=' + Date.now());
+      const res = await fetch(SHEET_API_URL + '?t=' + Date.now(), {
+        redirect: 'follow'
+      });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       liveData = await res.json();
       if (liveData.error) throw new Error(liveData.error);
@@ -1119,7 +1121,7 @@ window.addEventListener('load', () => {
   document.getElementById('refreshStatus').textContent = 'demo · connecting...';
 
   // Attempt live fetch
-  if (SHEET_API_URL !== 'https://script.google.com/macros/s/AKfycbxlhY6Lfh9f6Ym9pBwid-Kyps-wtHKRYzCTLcn7nc_2P_1fMNwh9CloYKQxOk1S9bhWIg/exec') {
+  if (SHEET_API_URL !== 'YOUR_APPS_SCRIPT_URL_HERE') {
     fetchData();
   } else {
     document.getElementById('refreshStatus').textContent = 'demo mode · configure API';
@@ -1131,7 +1133,7 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     const lastRefresh = liveData?.refreshed ? new Date(liveData.refreshed) : null;
     const stale = !lastRefresh || (Date.now() - lastRefresh.getTime()) > REFRESH_INTERVAL_MS;
-    if (stale && SHEET_API_URL !== 'https://script.google.com/macros/s/AKfycbxlhY6Lfh9f6Ym9pBwid-Kyps-wtHKRYzCTLcn7nc_2P_1fMNwh9CloYKQxOk1S9bhWIg/exec') fetchData();
+    if (stale && SHEET_API_URL !== 'YOUR_APPS_SCRIPT_URL_HERE') fetchData();
   }
 });
 </script>
