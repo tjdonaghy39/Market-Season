@@ -1005,8 +1005,8 @@ async function runAI() {
       const t = j.transition || {};
       body.innerHTML = `
         <div class="ai-verdict">${j.verdict || ''}</div>
-        ${confirms ? `<div class="ai-section"><div class="ai-section-label green">CONFIRMS POSITIONING</div>${confirms}</div>` : ''}
-        ${contradicts ? `<div class="ai-section"><div class="ai-section-label red">CONTRADICTS / WATCH</div>${contradicts}</div>` : ''}
+        ${confirms ? `<div class="ai-section"><div class="ai-section-label green">CONFIRMATIONS</div>${confirms}</div>` : ''}
+        ${contradicts ? `<div class="ai-section"><div class="ai-section-label red">CONTRADICTIONS</div>${contradicts}</div>` : ''}
         ${j.watch ? `<div class="ai-section"><div class="ai-section-label amber">WATCH NEXT 48H</div><div class="ai-watch">${j.watch}</div></div>` : ''}
         <div class="ai-section">
           <div class="ai-section-label accent">TRANSITION PROBABILITY</div>
