@@ -377,7 +377,21 @@
 
 <!-- ── EVENTS ── -->
 <div class="page" id="page-events">
-  <div class="sec">KEY EVENTS</div>
+  <div class="sec">MARKET EVENTS & SENTIMENT</div>
+
+  <div style="padding:0 14px;margin-bottom:8px">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden">
+      <div style="padding:11px 14px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:11px;font-family:var(--mono);color:var(--accent)">CLAUDE · LIVE EVENTS BRIEFING</div>
+        <button class="ai-run-btn" id="eventsRefreshBtn" onclick="loadEvents(true)">REFRESH ↗</button>
+      </div>
+      <div id="eventsStatus" style="padding:8px 14px;font-size:10px;font-family:var(--mono);color:var(--muted);border-bottom:1px solid var(--border);display:none"></div>
+      <div id="eventsLoading" style="padding:20px 14px;font-size:13px;color:var(--muted)">
+        Tap REFRESH to load today's market events briefing.
+      </div>
+    </div>
+  </div>
+
   <div class="events-list" id="eventsList"></div>
   <div class="spacer"></div>
 </div>
@@ -834,22 +848,91 @@ function renderMarkets(d) {
     table(row('VIX',v?.vix)+row('VVIX',v?.vvix));
 }
 
-// ── Events ────────────────────────────────────────────────────────────────────
+// ── Events — AI powered ───────────────────────────────────────────────────────
+let eventsLastLoaded = null;
+const EVENTS_CACHE_MS = 6 * 60 * 60 * 1000; // 6 hours
+
 function renderEvents() {
-  const events = [
-    { title:'Fed Rate Decision + Dot Plot', date:'TODAY · 19:00 GMT', impact:'high', note:"Hold at 3.50–3.75% priced at 92%+. Watch dot plot for hike signals. Powell press conference 19:30 GMT. Key trigger for gold and linker positioning — a wide dot dispersion confirms stagflation thesis." },
-    { title:'UK CPI (February)', date:'19 Mar · 07:00 GMT', impact:'high', note:"Expected ~3.6% YoY. Elevated print supports linker overweight and INXG position. Above 4% would sharpen BoE hike debate — watch INXG for short-term duration volatility." },
-    { title:'BoE Meeting Minutes', date:'20 Mar', impact:'med', note:"MPC vote split expected. Hawkish hold most likely. Relevant for UK linker positioning and FTSE rate sensitivity sectors." },
-    { title:'US Initial Jobless Claims', date:'19 Mar · 13:30 GMT', impact:'med', note:"Labour market resilience supports Fed hold. Rising claims = contraction deepening = gold and linkers bid further." },
-    { title:'Hormuz Strait — Shipping', date:'Ongoing', impact:'high', note:"Iran-Israel conflict. Oil +40–66% in 60 days. Escalation = further inflation spike, gold and linkers bid. De-escalation = oil correction, gold pullback. Monitor daily." },
-    { title:'Next FOMC Meeting', date:'28–29 Apr', impact:'low', note:"Powell's final meeting before Warsh expected as Fed Chair. Markets watch for transition language and any policy signal shift." },
-  ];
-  document.getElementById('eventsList').innerHTML = events.map(e => `
-    <div class="ev-card">
-      <div class="ev-top"><div class="ev-title">${e.title}</div><div class="ev-date">${e.date}</div></div>
-      <span class="ev-badge ${e.impact}">${e.impact.toUpperCase()} IMPACT</span>
-      <div class="ev-note">${e.note}</div>
-    </div>`).join('');
+  const stale = !eventsLastLoaded || (Date.now() - eventsLastLoaded) > EVENTS_CACHE_MS;
+  if (stale) loadEvents(false);
+}
+
+async function loadEvents(manual) {
+  const btn      = document.getElementById('eventsRefreshBtn');
+  const loading  = document.getElementById('eventsLoading');
+  const list     = document.getElementById('eventsList');
+  const statusEl = document.getElementById('eventsStatus');
+
+  btn.disabled = true;
+  btn.textContent = '...';
+  loading.style.display = 'block';
+  loading.innerHTML = 'Fetching today\'s briefing<span class="cursor"></span>';
+  list.innerHTML = '';
+  statusEl.style.display = 'none';
+
+  const d     = liveData;
+  const score = d?.engine?.score ?? -7;
+  const vix   = d?.volatility?.vix?.today ?? 0;
+  const today = new Date().toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+  const spxHeat    = d?.equities?.spx?.heat ?? null;
+  const goldHeat   = d?.commodities?.gld?.heat ?? null;
+  const oilD60     = d?.commodities?.uso?.d60 ?? null;
+  const copperHeat = d?.cycleRatios?.cper_gld?.heat ?? null;
+  const tltHeat    = d?.bonds?.tlt?.heat ?? null;
+  const tipHeat    = d?.bonds?.tip?.heat ?? null;
+  const vixHeat    = d?.volatility?.vix?.heat ?? null;
+
+  const prompt = `Today is ${today}. You are a senior macro strategist providing a daily market events briefing for a portfolio in trough/stagflationary contraction (season score ${score}/10, VIX ${vix?.toFixed ? vix.toFixed(1) : vix}).
+
+Live signals: S&P heat ${spxHeat?.toFixed ? spxHeat.toFixed(4) : spxHeat}, Gold heat ${goldHeat?.toFixed ? goldHeat.toFixed(4) : goldHeat}, Oil 60D ${oilD60?.toFixed ? (oilD60*100).toFixed(1)+'%' : oilD60}, Copper/Gold heat ${copperHeat?.toFixed ? copperHeat.toFixed(4) : copperHeat}, TLT heat ${tltHeat?.toFixed ? tltHeat.toFixed(4) : tltHeat}, TIPS heat ${tipHeat?.toFixed ? tipHeat.toFixed(4) : tipHeat}, VIX heat ${vixHeat?.toFixed ? vixHeat.toFixed(4) : vixHeat}.
+
+Positioning: avoid equities, overweight linkers + short bonds, long bonds neutral, gold overweight.
+
+Use web search to find what economic events and data releases are actually scheduled this week. Return ONLY a valid JSON array — no markdown, no backticks, no explanation. Each object must have exactly: "title" (string), "date" (string, GMT), "impact" ("high"/"med"/"low"), "note" (2-3 sentences: what it is, expected outcome, what it means for current defensive positioning). Include 5-7 events covering key releases, central bank comms, and any ongoing geopolitical factors.`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1200,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+
+    const data = await res.json();
+    const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+    const clean = text.replace(/```json|```/g, '').trim();
+    const events = JSON.parse(clean);
+
+    eventsLastLoaded = Date.now();
+    loading.style.display = 'none';
+    statusEl.textContent = 'Generated ' + new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'}) + ' · auto-refreshes every 6 hours';
+    statusEl.style.display = 'block';
+
+    list.innerHTML = events.map(e => `
+      <div class="ev-card">
+        <div class="ev-top"><div class="ev-title">${e.title}</div><div class="ev-date">${e.date}</div></div>
+        <span class="ev-badge ${e.impact}">${e.impact.toUpperCase()} IMPACT</span>
+        <div class="ev-note">${e.note}</div>
+      </div>`).join('');
+
+  } catch(err) {
+    loading.style.display = 'none';
+    statusEl.textContent = 'Error — tap Refresh to retry';
+    statusEl.style.display = 'block';
+    list.innerHTML = `
+      <div class="ev-card">
+        <div class="ev-top"><div class="ev-title">Hormuz Strait — Iran/Israel Conflict</div><div class="ev-date">Ongoing</div></div>
+        <span class="ev-badge high">HIGH IMPACT</span>
+        <div class="ev-note">Oil +40–66% over 60 days on shipping disruption. Primary stagflation driver. Escalation deepens defensive positioning; ceasefire would trigger oil correction and may improve season score.</div>
+      </div>`;
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'REFRESH ↗';
 }
 
 // ── AI Analysis ───────────────────────────────────────────────────────────────
