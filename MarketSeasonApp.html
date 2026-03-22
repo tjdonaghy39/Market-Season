@@ -863,68 +863,66 @@ async function loadEvents(manual) {
   btn.disabled = true;
   btn.textContent = '...';
   loading.style.display = 'block';
-  loading.innerHTML = 'Fetching today\'s briefing<span class="cursor"></span>';
+  loading.innerHTML = 'Searching global markets<span class="cursor"></span>';
   list.innerHTML = '';
   statusEl.style.display = 'none';
 
-  const d     = liveData;
-  const score = d?.engine?.score ?? -7;
-  const vix   = d?.volatility?.vix?.today ?? 0;
-  const today = new Date().toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
-  const spxHeat    = d?.equities?.spx?.heat ?? null;
-  const goldHeat   = d?.commodities?.gld?.heat ?? null;
-  const oilD60     = d?.commodities?.uso?.d60 ?? null;
-  const copperHeat = d?.cycleRatios?.cper_gld?.heat ?? null;
-  const tltHeat    = d?.bonds?.tlt?.heat ?? null;
-  const tipHeat    = d?.bonds?.tip?.heat ?? null;
-  const vixHeat    = d?.volatility?.vix?.heat ?? null;
-
-  const prompt = `Today is ${today}. You are a senior macro strategist providing a daily market events briefing for a portfolio in trough/stagflationary contraction (season score ${score}/10, VIX ${vix?.toFixed ? vix.toFixed(1) : vix}).
-
-Live signals: S&P heat ${spxHeat?.toFixed ? spxHeat.toFixed(4) : spxHeat}, Gold heat ${goldHeat?.toFixed ? goldHeat.toFixed(4) : goldHeat}, Oil 60D ${oilD60?.toFixed ? (oilD60*100).toFixed(1)+'%' : oilD60}, Copper/Gold heat ${copperHeat?.toFixed ? copperHeat.toFixed(4) : copperHeat}, TLT heat ${tltHeat?.toFixed ? tltHeat.toFixed(4) : tltHeat}, TIPS heat ${tipHeat?.toFixed ? tipHeat.toFixed(4) : tipHeat}, VIX heat ${vixHeat?.toFixed ? vixHeat.toFixed(4) : vixHeat}.
-
-Positioning: avoid equities, overweight linkers + short bonds, long bonds neutral, gold overweight.
-
-Use web search to find what economic events and data releases are actually scheduled this week. Return ONLY a valid JSON array — no markdown, no backticks, no explanation. Each object must have exactly: "title" (string), "date" (string, GMT), "impact" ("high"/"med"/"low"), "note" (2-3 sentences: what it is, expected outcome, what it means for current defensive positioning). Include 5-7 events covering key releases, central bank comms, and any ongoing geopolitical factors.`;
-
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1200,
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
-
+    const ctx = encodeURIComponent(JSON.stringify(buildAIContext()));
+    const url = SHEET_API_URL + '?action=events&context=' + ctx + '&t=' + Date.now();
+    const res = await fetch(url, { redirect: 'follow' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
-    const clean = text.replace(/```json|```/g, '').trim();
-    const events = JSON.parse(clean);
+    if (data.error) throw new Error(data.error);
 
     eventsLastLoaded = Date.now();
     loading.style.display = 'none';
-    statusEl.textContent = 'Generated ' + new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'}) + ' · auto-refreshes every 6 hours';
+
+    const events   = data.events || [];
+    const forecast = data.forecast || '';
+
+    statusEl.textContent = 'Generated ' + new Date().toLocaleTimeString('en-GB',
+      {hour:'2-digit', minute:'2-digit'}) + ' · auto-refreshes every 6 hours';
     statusEl.style.display = 'block';
 
-    list.innerHTML = events.map(e => `
-      <div class="ev-card">
-        <div class="ev-top"><div class="ev-title">${e.title}</div><div class="ev-date">${e.date}</div></div>
-        <span class="ev-badge ${e.impact}">${e.impact.toUpperCase()} IMPACT</span>
-        <div class="ev-note">${e.note}</div>
-      </div>`).join('');
+    // Render events
+    list.innerHTML = events.map(e => {
+      const gateTag = e.gateRelevant
+        ? '<span style="margin-left:6px;font-size:9px;font-family:var(--mono);background:rgba(124,111,255,.15);color:var(--accent);padding:2px 6px;border-radius:6px">GATE RELEVANT</span>'
+        : '';
+      const horizonColor = e.horizon === 'near-term' ? 'var(--amber)' : e.horizon === 'structural' ? 'var(--accent)' : 'var(--muted)';
+      return `
+        <div class="ev-card">
+          <div class="ev-top">
+            <div class="ev-title">${e.title}${gateTag}</div>
+            <div class="ev-date">${e.date}</div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+            <span class="ev-badge ${e.impact}">${e.impact.toUpperCase()} IMPACT</span>
+            <span style="font-size:9px;font-family:var(--mono);color:${horizonColor}">${(e.horizon||''). toUpperCase()}</span>
+          </div>
+          <div class="ev-note">${e.note}</div>
+        </div>`;
+    }).join('');
 
-  } catch(err) {
+    // Render forecast section
+    if (forecast) {
+      list.innerHTML += `
+        <div style="margin:8px 0 0;background:var(--surface);border:1px solid var(--border2);border-radius:12px;overflow:hidden">
+          <div style="padding:10px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10px;font-family:var(--mono);color:var(--accent);letter-spacing:.1em">SEASONAL TRANSITION FORECAST</div>
+          <div style="padding:13px 14px;font-size:12px;color:var(--muted);line-height:1.65;white-space:pre-wrap">${forecast}</div>
+        </div>`;
+    }
+
+  } catch(e) {
     loading.style.display = 'none';
-    statusEl.textContent = 'Error — tap Refresh to retry';
+    statusEl.textContent = 'Error — ' + e.message + '. Tap Refresh to retry.';
     statusEl.style.display = 'block';
     list.innerHTML = `
       <div class="ev-card">
-        <div class="ev-top"><div class="ev-title">Hormuz Strait — Iran/Israel Conflict</div><div class="ev-date">Ongoing</div></div>
-        <span class="ev-badge high">HIGH IMPACT</span>
-        <div class="ev-note">Oil +40–66% over 60 days on shipping disruption. Primary stagflation driver. Escalation deepens defensive positioning; ceasefire would trigger oil correction and may improve season score.</div>
+        <div class="ev-top"><div class="ev-title">Events unavailable</div><div class="ev-date">Now</div></div>
+        <span class="ev-badge low">INFO</span>
+        <div class="ev-note">Could not load AI events briefing. Check that GEMINI_API_KEY is set in Apps Script Script Properties, then tap Refresh.</div>
       </div>`;
   }
 
@@ -933,74 +931,61 @@ Use web search to find what economic events and data releases are actually sched
 }
 
 // ── AI Analysis ───────────────────────────────────────────────────────────────
+
+// ── Build AI context object from live data ────────────────────────────────────
+function buildAIContext() {
+  const d = liveData;
+  const fmt = v => v != null && !isNaN(v) ? (v >= 0 ? '+' : '') + Number(v).toFixed(4) : 'n/a';
+  const fmtPct = v => v != null && !isNaN(v) ? (v >= 0 ? '+' : '') + (v*100).toFixed(1) + '%' : 'n/a';
+  const signals = d?.signals || [];
+  const jplgSig = signals.find(s => s.name?.includes('Global Equity'));
+  const jepgSig = signals.find(s => s.name?.includes('Covered Call'));
+  const gateSig = signals.find(s => s.name?.includes('Re-entry'));
+  return {
+    score:       d?.engine?.score ?? 'n/a',
+    season:      d?.engine?.season ?? 'n/a',
+    confidence:  d?.engine?.confidence ?? 'n/a',
+    focus1:      d?.engine?.focus1 ?? 'n/a',
+    subScores:   d?.engine?.subScores ?? {},
+    spxHeat:     fmt(d?.equities?.spx?.heat),
+    spxD60:      fmtPct(d?.equities?.spx?.d60),
+    goldHeat:    fmt(d?.commodities?.gld?.heat),
+    goldD60:     fmtPct(d?.commodities?.gld?.d60),
+    tipHeat:     fmt(d?.bonds?.tip?.heat),
+    tltHeat:     fmt(d?.bonds?.tlt?.heat),
+    oilD60:      fmtPct(d?.commodities?.uso?.d60),
+    copperHeat:  fmt(d?.cycleRatios?.cper_gld?.heat),
+    vix:         d?.volatility?.vix?.today?.toFixed ? d.volatility.vix.today.toFixed(1) : 'n/a',
+    vixHeat:     fmt(d?.volatility?.vix?.heat),
+    vixD60:      fmtPct(d?.volatility?.vix?.d60),
+    uupHeat:     fmt(d?.fx?.uup?.heat),
+    xlyHeat:     fmt(d?.cycleRatios?.xly_xlp?.heat),
+    hygHeat:     fmt(d?.bonds?.hyg?.heat),
+    jplgSignal:  jplgSig?.signal ?? 'n/a',
+    jepgSignal:  jepgSig?.signal ?? 'n/a',
+    gateSignal:  gateSig?.signal ?? 'n/a',
+  };
+}
+
 async function runAI() {
-  const btn = document.getElementById('aiBtn');
+  const btn  = document.getElementById('aiBtn');
   const body = document.getElementById('aiBody');
   btn.disabled = true; btn.textContent = '...';
   body.classList.remove('loaded');
-  body.innerHTML = 'Analysing<span class="cursor"></span>';
-
-  const d     = liveData;
-  const score = d?.engine?.score ?? -7;
-  const vix   = d?.volatility?.vix?.today ?? 0;
-  const today = new Date().toLocaleDateString('en-GB', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
-
-  // Pull all available live signals
-  const spxHeat    = d?.equities?.spx?.heat;
-  const spxD60     = d?.equities?.spx?.d60;
-  const goldHeat   = d?.commodities?.gld?.heat;
-  const goldD60    = d?.commodities?.gld?.d60;
-  const tipHeat    = d?.bonds?.tip?.heat;
-  const tltHeat    = d?.bonds?.tlt?.heat;
-  const oilD60     = d?.commodities?.uso?.d60;
-  const copperHeat = d?.cycleRatios?.cper_gld?.heat;
-  const vixHeat    = d?.volatility?.vix?.heat;
-  const vixD60     = d?.volatility?.vix?.d60;
-  const uupHeat    = d?.fx?.uup?.heat;
-  const xlyHeat    = d?.cycleRatios?.xly_xlp?.heat;
-  const season     = d?.engine?.season ?? '';
-  const focus1     = d?.engine?.focus1 ?? '';
-
-  const fmt = v => v != null && !isNaN(v) ? (v >= 0 ? '+' : '') + v.toFixed(4) : 'n/a';
-  const fmtPct = v => v != null && !isNaN(v) ? (v >= 0 ? '+' : '') + (v*100).toFixed(1) + '%' : 'n/a';
-
-  const prompt = `Today is ${today}. You are a senior global macro strategist providing a concise mobile daily briefing. Use web search to check what key market events happened or are happening this week that are relevant to the current positioning.
-
-Current live market data:
-- Season: ${season} | Score: ${score}/10
-- S&P 500: heat ${fmt(spxHeat)}, 60D ${fmtPct(spxD60)}
-- Gold: heat ${fmt(goldHeat)}, 60D ${fmtPct(goldD60)}
-- US TIPS: heat ${fmt(tipHeat)}
-- TLT long bond: heat ${fmt(tltHeat)}
-- Oil USO: 60D ${fmtPct(oilD60)}
-- Copper/Gold ratio: heat ${fmt(copperHeat)}
-- VIX: ${vix?.toFixed ? vix.toFixed(1) : vix}, heat ${fmt(vixHeat)}, 60D ${fmtPct(vixD60)}
-- USD (UUP): heat ${fmt(uupHeat)}
-- XLY/XLP cycle: heat ${fmt(xlyHeat)}
-
-Current allocation: ${focus1}
-
-Write 3-4 crisp sentences: (1) what the current score and signals mean right now, (2) the single most important market event or development this week and what it means for the defensive positioning, (3) one specific thing to watch in the next 24-48 hours that could change the signal. No bullet points. No stale references — only what is current as of today.`;
+  body.innerHTML = 'Searching markets & analysing<span class="cursor"></span>';
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 350,
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
+    const ctx = encodeURIComponent(JSON.stringify(buildAIContext()));
+    const url = SHEET_API_URL + '?action=analysis&context=' + ctx + '&t=' + Date.now();
+    const res = await fetch(url, { redirect: 'follow' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    // Extract text blocks only (skip tool use blocks)
-    const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+    if (data.error) throw new Error(data.error);
     body.classList.add('loaded');
-    body.textContent = text || 'Analysis unavailable.';
+    body.textContent = data.analysis || 'No analysis returned.';
   } catch(e) {
     body.classList.add('loaded');
-    body.textContent = `Score ${score}/10: all five sub-indicators negative, stagflationary contraction confirmed. Linkers outperform long bonds here because rates are held while inflation rises — real yields compress and the inflation principal uplift offsets duration drag, unlike TLT which falls without compensation. Check the Events tab for this week's key releases and their implications for your positioning.`;
+    body.textContent = 'Analysis unavailable — ' + e.message + '. Check Gemini API key is set in Apps Script Script Properties.';
   }
   btn.disabled = false; btn.textContent = 'ANALYSE ↗';
 }
