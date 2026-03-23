@@ -183,6 +183,22 @@
   .gate-signal{font-size:13px;font-weight:500;margin-bottom:6px}
   .gate-signal.green{color:var(--green)} .gate-signal.amber{color:var(--amber)} .gate-signal.red{color:var(--red)}
   .gate-detail{font-size:11px;color:var(--muted);line-height:1.55}
+  .gate-progress{margin-top:12px;display:flex;flex-direction:column;gap:6px}
+  .gate-condition{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:var(--surface2)}
+  .gate-cond-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .gate-cond-dot.met{background:var(--green);box-shadow:0 0 6px rgba(61,255,160,.5)}
+  .gate-cond-dot.unmet{background:var(--hint)}
+  .gate-cond-name{font-size:11px;flex:1}
+  .gate-cond-name.met{color:var(--text)} .gate-cond-name.unmet{color:var(--muted)}
+  .gate-cond-val{font-family:var(--mono);font-size:11px}
+  .gate-cond-val.met{color:var(--green)} .gate-cond-val.unmet{color:var(--red)}
+  .gate-cond-streak{font-size:9px;font-family:var(--mono);color:var(--muted);margin-left:4px}
+  .gate-progress-bar{margin-top:10px;height:3px;background:var(--hint);border-radius:2px;overflow:hidden}
+  .gate-progress-fill{height:3px;border-radius:2px;background:linear-gradient(90deg,var(--red),var(--amber),var(--green));transition:width .6s cubic-bezier(.4,0,.2,1)}
+  .gate-progress-label{display:flex;justify-content:space-between;margin-top:4px}
+  .gate-progress-pct{font-size:10px;font-family:var(--mono);color:var(--accent)}
+  .gate-progress-desc{font-size:10px;color:var(--muted)}
+  .gate-days-note{margin-top:8px;font-size:10px;color:var(--muted);font-family:var(--mono)}
 
   .trigger-grid{padding:0 14px;display:flex;flex-direction:column;gap:7px}
   .trigger-row{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:11px 13px;display:flex;align-items:center;gap:10px}
@@ -327,6 +343,47 @@
     <div class="gate-title">AFTER DEFENSIVE — GATE STATUS</div>
     <div class="gate-signal red" id="tactGateSignal">Loading...</div>
     <div class="gate-detail" id="tactGateDetail"></div>
+
+    <!-- Gate progress indicator -->
+    <div class="gate-progress" id="gateProgress">
+      <!-- Condition 1: Season score -->
+      <div class="gate-condition" id="gateCond1">
+        <div class="gate-cond-dot unmet" id="gateDot1"></div>
+        <div class="gate-cond-name unmet" id="gateCondName1">Season score ≥ −1</div>
+        <div>
+          <span class="gate-cond-val unmet" id="gateCondVal1">—</span>
+          <span class="gate-cond-streak" id="gateCondStreak1"></span>
+        </div>
+      </div>
+      <!-- Condition 2: Copper/Gold -->
+      <div class="gate-condition" id="gateCond2">
+        <div class="gate-cond-dot unmet" id="gateDot2"></div>
+        <div class="gate-cond-name unmet" id="gateCondName2">Copper/Gold heat &gt; 0</div>
+        <div>
+          <span class="gate-cond-val unmet" id="gateCondVal2">—</span>
+          <span class="gate-cond-streak" id="gateCondStreak2"></span>
+        </div>
+      </div>
+      <!-- Condition 3: XLY/XLP -->
+      <div class="gate-condition" id="gateCond3">
+        <div class="gate-cond-dot unmet" id="gateDot3"></div>
+        <div class="gate-cond-name unmet" id="gateCondName3">XLY/XLP cycle heat &gt; 0</div>
+        <div>
+          <span class="gate-cond-val unmet" id="gateCondVal3">—</span>
+          <span class="gate-cond-streak" id="gateCondStreak3"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Progress bar -->
+    <div class="gate-progress-bar">
+      <div class="gate-progress-fill" id="gateProgressFill" style="width:0%"></div>
+    </div>
+    <div class="gate-progress-label">
+      <span class="gate-progress-pct" id="gateProgressPct">0 / 3 conditions met</span>
+      <span class="gate-progress-desc">need all 3 for 5 days</span>
+    </div>
+    <div class="gate-days-note" id="gateDaysNote"></div>
   </div>
 
   <!-- Key triggers -->
@@ -658,10 +715,63 @@ function renderTactical(d) {
     (gateState === 'open' ? 'green' : gateState === 'partial' ? 'amber' : 'red');
   document.getElementById('tactGateDetail').textContent = gateSig?.rationale || '';
 
+  // ── Gate progress indicator ───────────────────────────────────────────────
+  const gateScoreVal = d?.engine?.score ?? null;
+  const copperGateHeat = d?.cycleRatios?.cper_gld?.heat ?? null;
+  const xlyGateHeat    = d?.cycleRatios?.xly_xlp?.heat ?? null;
+
+  function updateGateCond(n, met, val, threshold) {
+    const dot      = document.getElementById('gateDot'        + n);
+    const nameEl   = document.getElementById('gateCondName'   + n);
+    const valEl    = document.getElementById('gateCondVal'    + n);
+    const streakEl = document.getElementById('gateCondStreak' + n);
+    if (!dot) return;
+    dot.className    = 'gate-cond-dot '  + (met ? 'met' : 'unmet');
+    nameEl.className = 'gate-cond-name ' + (met ? 'met' : 'unmet');
+    valEl.className  = 'gate-cond-val '  + (met ? 'met' : 'unmet');
+    valEl.textContent = val !== null
+      ? (typeof val === 'number' && Math.abs(val) < 1
+          ? (val >= 0 ? '+' : '') + val.toFixed(4)
+          : (val > 0 ? '+' : '') + val)
+      : '—';
+    streakEl.textContent = met ? '✓' : threshold;
+  }
+
+  const cond1Met = gateScoreVal !== null && gateScoreVal >= -1;
+  const cond2Met = copperGateHeat !== null && copperGateHeat > 0;
+  const cond3Met = xlyGateHeat !== null && xlyGateHeat > 0;
+
+  updateGateCond(1, cond1Met, gateScoreVal, 'needs ≥−1');
+  updateGateCond(2, cond2Met, copperGateHeat, 'needs >0');
+  updateGateCond(3, cond3Met, xlyGateHeat, 'needs >0');
+
+  const metCount = [cond1Met, cond2Met, cond3Met].filter(Boolean).length;
+  const gatePct = (metCount / 3) * 100;
+
+  const fillEl = document.getElementById('gateProgressFill');
+  const pctEl  = document.getElementById('gateProgressPct');
+  const noteEl = document.getElementById('gateDaysNote');
+  if (fillEl) fillEl.style.width = gatePct + '%';
+  if (pctEl)  pctEl.textContent  = metCount + ' / 3 conditions met today';
+
+  let note = '';
+  if (metCount === 0) {
+    note = 'All 3 conditions failing — remain fully defensive';
+  } else if (metCount === 1) {
+    const which = cond1Met ? 'Score' : cond2Met ? 'Copper/Gold' : 'XLY/XLP';
+    note = which + ' condition met today — watch for others to follow';
+  } else if (metCount === 2) {
+    const missing = !cond1Met ? 'score ≥−1' : !cond2Met ? 'Copper/Gold >0' : 'XLY/XLP >0';
+    note = '⚡ 2/3 met — gate opens when ' + missing + ' also turns positive, sustained 5 days';
+  } else {
+    note = '⚡ All 3 conditions met today — gate opens after 5 consecutive days';
+  }
+  if (noteEl) noteEl.textContent = note;
+
   // ── Render key trigger indicators ─────────────────────────────────────────
   const spxHeat    = d.equities?.spx?.heat ?? null;
   const xlyHeat    = d.cycleRatios?.xly_xlp?.heat ?? null;
-  const copperHeat = d.cycleRatios?.cper_gld?.heat ?? null;
+  const trigCopperHeat = d.cycleRatios?.cper_gld?.heat ?? null;
   const vixHeat    = d.volatility?.vix?.heat ?? null;
   const vixToday   = d.volatility?.vix?.today ?? null;
 
@@ -701,8 +811,8 @@ function renderTactical(d) {
     {
       name: 'Copper/Gold Heat',
       sub:  'Re-entry gate trigger',
-      val:  copperHeat !== null ? fmt(copperHeat) : '—',
-      heat: copperHeat,
+      val:  trigCopperHeat !== null ? fmt(trigCopperHeat) : '—',
+      heat: trigCopperHeat,
       scale: 300,
       colorFn: v => v > 0 ? 'var(--green)' : 'var(--red)',
     },
