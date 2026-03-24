@@ -527,6 +527,7 @@ const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 let liveData = null;
 let refreshTimer = null;
 let isLoading = false;
+let aiHasRun   = false;  // auto-run AI once on first load
 
 // ── Navigation ───────────────────────────────────────────────────────────────
 function showPage(id) {
@@ -556,11 +557,26 @@ async function fetchData(manual = false) {
     const now = new Date();
     document.getElementById('refreshStatus').textContent =
       'live · ' + now.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+    // Auto-run AI analysis after data loads (first load or manual refresh)
+    if (!aiHasRun || manual) {
+      aiHasRun = true;
+      setTimeout(runAI, 400); // small delay so render completes first
+    }
   } catch(e) {
     const banner = document.getElementById('errBanner');
     banner.textContent = 'Data error: ' + e.message + '. Using last known data.';
     banner.classList.add('show');
-    if (!liveData) { liveData = getDemoData(); renderAll(liveData); }
+    if (!liveData) {
+      // Don't show demo data — show explicit error state
+      const focusList = document.getElementById('focusList');
+      if (focusList) focusList.innerHTML = `
+        <div class="focus-card">
+          <div class="focus-text" style="color:var(--red)">
+            ⚠ Could not load live data. Check connection and refresh.
+          </div>
+        </div>`;
+      document.getElementById('refreshStatus').textContent = 'error — tap to retry';
+    }
     document.getElementById('refreshStatus').textContent = 'error · retrying';
   }
 
@@ -1359,13 +1375,66 @@ function getDemoData() {
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
-window.addEventListener('load', () => {
-  // Show demo data immediately, then try live API
-  liveData = getDemoData();
-  renderAll(liveData);
-  document.getElementById('refreshStatus').textContent = 'demo · connecting...';
+function showLoadingState() {
+  const wait = '⏳ Refreshing live data, please wait…';
 
-  // Attempt live fetch
+  // ── Overview / hero ────────────────────────────────────────────────────────
+  const scoreEl = document.getElementById('scoreVal');
+  if (scoreEl) { scoreEl.textContent = '—'; scoreEl.style.color = 'var(--muted)'; }
+  const seasonEl = document.getElementById('seasonText');
+  if (seasonEl) { seasonEl.textContent = wait; seasonEl.style.color = 'var(--muted)'; }
+  const descEl = document.getElementById('descText');
+  if (descEl) descEl.textContent = '';
+  const scoreBarEl = document.getElementById('scoreBar');
+  if (scoreBarEl) scoreBarEl.style.left = '50%';
+  const confEl = document.getElementById('confText');
+  if (confEl) confEl.textContent = '';
+  const heroDateEl = document.getElementById('heroDate');
+  if (heroDateEl) heroDateEl.textContent = '';
+
+  // ── Focus list ─────────────────────────────────────────────────────────────
+  const focusList = document.getElementById('focusList');
+  if (focusList) focusList.innerHTML = `
+    <div class="focus-card">
+      <div class="focus-text" style="color:var(--muted);text-align:center;padding:8px 0">${wait}</div>
+    </div>`;
+
+  // ── AI analysis ────────────────────────────────────────────────────────────
+  const aiBody = document.getElementById('aiBody');
+  if (aiBody) {
+    aiBody.classList.remove('loaded');
+    aiBody.textContent = 'Waiting for live data…';
+  }
+
+  // ── Signals tab — blank all alloc cards ────────────────────────────────────
+  const allocList = document.getElementById('allocList');
+  if (allocList) allocList.innerHTML = `
+    <div style="padding:20px 14px;color:var(--muted);font-size:13px;text-align:center">${wait}</div>`;
+
+  // ── Tactical tab ───────────────────────────────────────────────────────────
+  const stateEl = document.getElementById('factorBasketState');
+  if (stateEl) { stateEl.textContent = '—'; stateEl.className = 'factor-basket-state neutral'; }
+  const sigEl = document.getElementById('factorBasketSignal');
+  if (sigEl) sigEl.textContent = wait;
+  ['iwfq','iwfv','iwfm','gld','jepgFac'].forEach(p => {
+    const s = document.getElementById(p + 'Signal');
+    if (s) s.textContent = '—';
+    const h = document.getElementById(p + 'Heat');
+    if (h) { h.textContent = '—'; h.style.color = 'var(--muted)'; }
+    const b = document.getElementById(p + 'Bar');
+    if (b) b.style.width = '0%';
+  });
+  const jepgEl = document.getElementById('tactJepgSignal');
+  if (jepgEl) { jepgEl.textContent = '—'; jepgEl.className = 'tact-signal muted'; }
+  const gateEl = document.getElementById('tactGateSignal');
+  if (gateEl) { gateEl.textContent = wait; gateEl.className = 'gate-signal'; }
+
+  // ── Status bar ─────────────────────────────────────────────────────────────
+  document.getElementById('refreshStatus').textContent = 'refreshing…';
+}
+
+window.addEventListener('load', () => {
+  showLoadingState();
   fetchData();
 });
 
