@@ -299,61 +299,7 @@
 
 <!-- ── TACTICAL ── -->
 <div class="page" id="page-tactical">
-  <div class="sec">TACTICAL EQUITY INSTRUMENTS</div>
-
-  <!-- Global Equity hero card -->
-  <div class="tact-hero neutral" id="tactJplgCard">
-    <div class="tact-hero-bar" id="tactJplgBar"></div>
-    <div class="tact-label">GLOBAL EQUITY (JPLG) · MULTI-FACTOR GROWTH</div>
-    <div class="tact-signal muted" id="tactJplgSignal">Loading...</div>
-    <div class="tact-rationale" id="tactJplgRationale"></div>
-    <div class="tact-metrics">
-      <div class="tact-metric">
-        <div class="tact-metric-label">PRICE (GBp)</div>
-        <div class="tact-metric-val" id="tactJplgPrice">—</div>
-      </div>
-      <div class="tact-metric">
-        <div class="tact-metric-label">1D %</div>
-        <div class="tact-metric-val" id="tactJplgD1">—</div>
-      </div>
-      <div class="tact-metric">
-        <div class="tact-metric-label">20D %</div>
-        <div class="tact-metric-val" id="tactJplgD20">—</div>
-      </div>
-      <div class="tact-metric">
-        <div class="tact-metric-label">60D %</div>
-        <div class="tact-metric-val" id="tactJplgD60">—</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Covered Call Equity hero card -->
-  <div class="tact-hero neutral" id="tactJepgCard" style="margin-top:8px">
-    <div class="tact-hero-bar" id="tactJepgBar"></div>
-    <div class="tact-label">COVERED CALL EQUITY (JEPG) · INCOME</div>
-    <div class="tact-signal muted" id="tactJepgSignal">Loading...</div>
-    <div class="tact-rationale" id="tactJepgRationale"></div>
-    <div class="tact-metrics">
-      <div class="tact-metric">
-        <div class="tact-metric-label">PRICE (USD)</div>
-        <div class="tact-metric-val" id="tactJepgPrice">—</div>
-      </div>
-      <div class="tact-metric">
-        <div class="tact-metric-label">1D %</div>
-        <div class="tact-metric-val" id="tactJepgD1">—</div>
-      </div>
-      <div class="tact-metric">
-        <div class="tact-metric-label">20D %</div>
-        <div class="tact-metric-val" id="tactJepgD20">—</div>
-      </div>
-      <div class="tact-metric">
-        <div class="tact-metric-label">60D %</div>
-        <div class="tact-metric-val" id="tactJepgD60">—</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Factor ETF Basket -->
+  <!-- Factor ETF Basket — primary tactical vehicle -->
   <div class="sec">FACTOR ETF BASKET</div>
   <div class="factor-basket-card">
     <div class="factor-basket-header">
@@ -403,6 +349,33 @@
     </div>
   </div>
 
+  <!-- Covered Call Equity — fifth factor / income sleeve -->
+  <div class="sec">COVERED CALL EQUITY</div>
+  <div class="tact-hero neutral" id="tactJepgCard">
+    <div class="tact-hero-bar" id="tactJepgBar"></div>
+    <div class="tact-label">COVERED CALL EQUITY (JEPG) · FIFTH FACTOR · CHOPPY MARKET INCOME</div>
+    <div class="tact-signal muted" id="tactJepgSignal">Loading...</div>
+    <div class="tact-rationale" id="tactJepgRationale"></div>
+    <div class="tact-metrics">
+      <div class="tact-metric">
+        <div class="tact-metric-label">PRICE (GBp)</div>
+        <div class="tact-metric-val" id="tactJepgPrice">—</div>
+      </div>
+      <div class="tact-metric">
+        <div class="tact-metric-label">1D %</div>
+        <div class="tact-metric-val" id="tactJepgD1">—</div>
+      </div>
+      <div class="tact-metric">
+        <div class="tact-metric-label">20D %</div>
+        <div class="tact-metric-val" id="tactJepgD20">—</div>
+      </div>
+      <div class="tact-metric">
+        <div class="tact-metric-label">60D %</div>
+        <div class="tact-metric-val" id="tactJepgD60">—</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Re-entry gate -->
   <div class="sec">RE-ENTRY GATE</div>
   <div class="gate-card closed" id="tactGateCard">
@@ -446,7 +419,7 @@
       <div class="gate-progress-fill" id="gateProgressFill" style="width:0%"></div>
     </div>
     <div class="gate-progress-label">
-      <span class="gate-progress-pct" id="gateProgressPct">0 / 3 conditions met</span>
+      <span class="gate-progress-pct" id="gateProgressPct">0 / 2 conditions met</span>
       <span class="gate-progress-desc">need score + 1 cycle indicator for 3 days</span>
     </div>
     <div class="gate-days-note" id="gateDaysNote"></div>
@@ -794,26 +767,6 @@ function renderTactical(d) {
     return 'transparent';
   }
 
-  // ── Render JPLG card ──────────────────────────────────────────────────────
-  const jplgText = jplgSig?.signal || 'No signal — log building';
-  const jplgState = cardState(jplgText);
-  const jplgCard = document.getElementById('tactJplgCard');
-  jplgCard.className = 'tact-hero ' + jplgState;
-  document.getElementById('tactJplgBar').style.background = barColor(jplgState);
-  const jplgEl = document.getElementById('tactJplgSignal');
-  jplgEl.textContent = jplgText.replace(/▽▽|▽|▲|◆/g,'').trim();
-  jplgEl.className = 'tact-signal ' + sigColor(jplgText);
-  document.getElementById('tactJplgRationale').textContent = jplgSig?.rationale || '';
-
-  const jplg = d.tactical?.jplg;
-  document.getElementById('tactJplgPrice').textContent = jplg?.today?.toFixed ? jplg.today.toFixed(0) : '—';
-  document.getElementById('tactJplgD1').textContent  = fmtPct(jplg?.d1);
-  document.getElementById('tactJplgD1').style.color  = jplg?.d1 >= 0 ? 'var(--green)' : 'var(--red)';
-  document.getElementById('tactJplgD20').textContent = fmtPct(jplg?.d20);
-  document.getElementById('tactJplgD20').style.color = jplg?.d20 >= 0 ? 'var(--green)' : 'var(--red)';
-  document.getElementById('tactJplgD60').textContent = fmtPct(jplg?.d60);
-  document.getElementById('tactJplgD60').style.color = jplg?.d60 >= 0 ? 'var(--green)' : 'var(--red)';
-
   // ── Render JEPG card ──────────────────────────────────────────────────────
   const jepgText = jepgSig?.signal || 'No signal — log building';
   const jepgState = cardState(jepgText);
@@ -872,34 +825,38 @@ function renderTactical(d) {
     streakEl.textContent = met ? '✓' : threshold;
   }
 
-  const cond1Met = gateScoreVal !== null && gateScoreVal >= -1;
-  const cond2Met = copperGateHeat !== null && copperGateHeat > 0;
-  const cond3Met = xlyGateHeat !== null && xlyGateHeat > 0;
+  // Gate: score ≥-2 (condition 1) + Copper/Gold OR XLY/XLP >0 (condition 2)
+  const cond1Met = gateScoreVal !== null && gateScoreVal >= -2;
+  const cond2Met = (copperGateHeat !== null && copperGateHeat > 0) ||
+                   (xlyGateHeat !== null && xlyGateHeat > 0);
+  const cycleLeading = copperGateHeat > xlyGateHeat ? 'Cu/Au' : 'XLY/XLP';
+  const cycleVal = Math.max(copperGateHeat ?? -999, xlyGateHeat ?? -999);
 
-  updateGateCond(1, cond1Met, gateScoreVal, 'needs ≥−1');
-  updateGateCond(2, cond2Met, copperGateHeat, 'needs >0');
-  updateGateCond(3, cond3Met, xlyGateHeat, 'needs >0');
+  updateGateCond(1, cond1Met, gateScoreVal, 'needs ≥−2');
+  updateGateCond(2, cond2Met, cycleVal !== -999 ? cycleVal : null,
+    'Copper/Gold OR XLY/XLP >0');
+  // Hide condition 3 — gate only has 2 conditions now
+  const gateCond3El = document.getElementById('gateCond3');
+  if (gateCond3El) gateCond3El.style.display = 'none';
 
-  const metCount = [cond1Met, cond2Met, cond3Met].filter(Boolean).length;
-  const gatePct = (metCount / 3) * 100;
+  const metCount = [cond1Met, cond2Met].filter(Boolean).length;
+  const gatePct  = (metCount / 2) * 100;
 
   const fillEl = document.getElementById('gateProgressFill');
   const pctEl  = document.getElementById('gateProgressPct');
   const noteEl = document.getElementById('gateDaysNote');
   if (fillEl) fillEl.style.width = gatePct + '%';
-  if (pctEl)  pctEl.textContent  = metCount + ' / 3 conditions met today';
+  if (pctEl)  pctEl.textContent  = metCount + ' / 2 conditions met today';
 
   let note = '';
   if (metCount === 0) {
-    note = 'All 3 conditions failing — remain fully defensive';
+    note = 'Both conditions failing — basket stays at zero';
   } else if (metCount === 1) {
-    const which = cond1Met ? 'Score' : cond2Met ? 'Copper/Gold' : 'XLY/XLP';
-    note = which + ' condition met today — watch for others to follow';
-  } else if (metCount === 2) {
-    const missing = !cond1Met ? 'score ≥−1' : !cond2Met ? 'Copper/Gold >0' : 'XLY/XLP >0';
-    note = '⚡ 2/3 met — gate opens when ' + missing + ' also turns positive, sustained 5 days';
+    note = cond1Met
+      ? '1/2 — score met. Need Copper/Gold or XLY/XLP heat >0 for 3 days'
+      : '1/2 — cycle heat positive. Need score ≥−2 for 3 days';
   } else {
-    note = '⚡ All 3 conditions met today — gate opens after 5 consecutive days';
+    note = '⚡ Both conditions met today — gate opens after 3 consecutive days';
   }
   if (noteEl) noteEl.textContent = note;
 
