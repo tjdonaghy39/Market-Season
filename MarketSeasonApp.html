@@ -209,6 +209,22 @@
   .trigger-bar{position:absolute;top:0;height:3px;border-radius:2px}
 
   .rules-card{margin:0 14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .factor-basket-card{margin:8px 14px 0;background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  .factor-basket-header{padding:11px 14px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+  .factor-basket-title{font-size:10px;font-family:var(--mono);color:var(--accent);letter-spacing:.1em}
+  .factor-basket-state{font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:8px}
+  .factor-basket-state.exit{background:rgba(255,90,90,.15);color:var(--red)}
+  .factor-basket-state.reduce{background:rgba(255,184,61,.12);color:var(--amber)}
+  .factor-basket-state.active{background:rgba(61,255,160,.1);color:var(--green)}
+  .factor-basket-state.neutral{background:rgba(255,255,255,.06);color:var(--muted)}
+  .factor-row{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+  .factor-row:last-child{border-bottom:none}
+  .factor-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .factor-name{font-size:12px;font-weight:500;flex:0 0 80px}
+  .factor-signal{font-size:11px;color:var(--muted);flex:1;line-height:1.4}
+  .factor-heat{font-family:var(--mono);font-size:11px;flex:0 0 60px;text-align:right}
+  .factor-weight-bar{flex:0 0 40px;height:3px;background:var(--hint);border-radius:2px;position:relative}
+  .factor-weight-fill{position:absolute;top:0;left:0;height:3px;border-radius:2px}
   .rules-head{padding:10px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10px;font-family:var(--mono);color:var(--muted);letter-spacing:.1em}
   .rule-row{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:flex-start}
   .rule-row:last-child{border-bottom:none}
@@ -337,10 +353,60 @@
     </div>
   </div>
 
+  <!-- Factor ETF Basket -->
+  <div class="sec">FACTOR ETF BASKET</div>
+  <div class="factor-basket-card">
+    <div class="factor-basket-header">
+      <div class="factor-basket-title">IWFQ · IWFV · IWFM · GLD — DYNAMIC BLEND</div>
+      <div class="factor-basket-state neutral" id="factorBasketState">Loading</div>
+    </div>
+    <div id="factorBasketSignal" style="padding:10px 14px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border);line-height:1.5"></div>
+    <!-- Quality -->
+    <div class="factor-row">
+      <div class="factor-dot" id="iwfqDot" style="background:var(--hint)"></div>
+      <div class="factor-name" style="color:var(--text)">IWFQ</div>
+      <div class="factor-signal" id="iwfqSignal">Quality Factor — loading</div>
+      <div class="factor-heat" id="iwfqHeat">—</div>
+      <div class="factor-weight-bar"><div class="factor-weight-fill" id="iwfqBar" style="width:33%;background:var(--accent)"></div></div>
+    </div>
+    <!-- Value -->
+    <div class="factor-row">
+      <div class="factor-dot" id="iwfvDot" style="background:var(--hint)"></div>
+      <div class="factor-name" style="color:var(--text)">IWFV</div>
+      <div class="factor-signal" id="iwfvSignal">Value Factor — loading</div>
+      <div class="factor-heat" id="iwfvHeat">—</div>
+      <div class="factor-weight-bar"><div class="factor-weight-fill" id="iwfvBar" style="width:33%;background:var(--accent)"></div></div>
+    </div>
+    <!-- Momentum -->
+    <div class="factor-row">
+      <div class="factor-dot" id="iwfmDot" style="background:var(--hint)"></div>
+      <div class="factor-name" style="color:var(--text)">IWFM</div>
+      <div class="factor-signal" id="iwfmSignal">Momentum Factor — loading</div>
+      <div class="factor-heat" id="iwfmHeat">—</div>
+      <div class="factor-weight-bar"><div class="factor-weight-fill" id="iwfmBar" style="width:25%;background:var(--accent)"></div></div>
+    </div>
+    <!-- Gold Factor -->
+    <div class="factor-row">
+      <div class="factor-dot" id="gldDot" style="background:var(--hint)"></div>
+      <div class="factor-name" style="color:var(--text)">GLD</div>
+      <div class="factor-signal" id="gldSignal">Gold Factor — loading</div>
+      <div class="factor-heat" id="gldHeat">—</div>
+      <div class="factor-weight-bar"><div class="factor-weight-fill" id="gldBar" style="width:20%;background:var(--accent)"></div></div>
+    </div>
+    <!-- JEPG Factor -->
+    <div class="factor-row">
+      <div class="factor-dot" id="jepgFacDot" style="background:var(--hint)"></div>
+      <div class="factor-name" style="color:var(--text)">JEPG</div>
+      <div class="factor-signal" id="jepgFacSignal">Covered Call — loading</div>
+      <div class="factor-heat" id="jepgFacHeat">—</div>
+      <div class="factor-weight-bar"><div class="factor-weight-fill" id="jepgFacBar" style="width:20%;background:var(--accent)"></div></div>
+    </div>
+  </div>
+
   <!-- Re-entry gate -->
   <div class="sec">RE-ENTRY GATE</div>
   <div class="gate-card closed" id="tactGateCard">
-    <div class="gate-title">AFTER DEFENSIVE — GATE STATUS</div>
+    <div class="gate-title">FACTOR BASKET RE-ENTRY GATE</div>
     <div class="gate-signal red" id="tactGateSignal">Loading...</div>
     <div class="gate-detail" id="tactGateDetail"></div>
 
@@ -349,7 +415,7 @@
       <!-- Condition 1: Season score -->
       <div class="gate-condition" id="gateCond1">
         <div class="gate-cond-dot unmet" id="gateDot1"></div>
-        <div class="gate-cond-name unmet" id="gateCondName1">Season score ≥ −1</div>
+        <div class="gate-cond-name unmet" id="gateCondName1">Season score ≥ −2 (3 days)</div>
         <div>
           <span class="gate-cond-val unmet" id="gateCondVal1">—</span>
           <span class="gate-cond-streak" id="gateCondStreak1"></span>
@@ -358,7 +424,7 @@
       <!-- Condition 2: Copper/Gold -->
       <div class="gate-condition" id="gateCond2">
         <div class="gate-cond-dot unmet" id="gateDot2"></div>
-        <div class="gate-cond-name unmet" id="gateCondName2">Copper/Gold heat &gt; 0</div>
+        <div class="gate-cond-name unmet" id="gateCondName2">Copper/Gold OR XLY/XLP heat &gt; 0 (3 days)</div>
         <div>
           <span class="gate-cond-val unmet" id="gateCondVal2">—</span>
           <span class="gate-cond-streak" id="gateCondStreak2"></span>
@@ -367,7 +433,7 @@
       <!-- Condition 3: XLY/XLP -->
       <div class="gate-condition" id="gateCond3">
         <div class="gate-cond-dot unmet" id="gateDot3"></div>
-        <div class="gate-cond-name unmet" id="gateCondName3">XLY/XLP cycle heat &gt; 0</div>
+        <div class="gate-cond-name unmet" id="gateCondName3">Cycle heat confirmed (3 days)</div>
         <div>
           <span class="gate-cond-val unmet" id="gateCondVal3">—</span>
           <span class="gate-cond-streak" id="gateCondStreak3"></span>
@@ -381,7 +447,7 @@
     </div>
     <div class="gate-progress-label">
       <span class="gate-progress-pct" id="gateProgressPct">0 / 3 conditions met</span>
-      <span class="gate-progress-desc">need all 3 for 5 days</span>
+      <span class="gate-progress-desc">need score + 1 cycle indicator for 3 days</span>
     </div>
     <div class="gate-days-note" id="gateDaysNote"></div>
   </div>
@@ -406,7 +472,7 @@
     </div>
     <div class="rule-row">
       <span class="rule-tag tag-entry">ENTER 5d</span>
-      <div class="rule-text">Score ≥ 0 + SPX heat positive + XLY/XLP cycle positive — all for 5 days → enter or hold Global Equity</div>
+      <div class="rule-text">All five factors (IWFQ, IWFV, IWFM, GLD, JEPG) compete purely on risk-adjusted heat. Weights = (heat ÷ risk scalar) normalised across all qualifying factors. Risk scalars: IWFQ 1.0 · IWFV 1.3 · JEPG 1.5 · GLD 1.6 · IWFM 2.0. No floors, no caps. Basket can be zero.</div>
     </div>
     <div class="rule-row">
       <span class="rule-tag tag-entry">HOLD 5d</span>
@@ -626,6 +692,72 @@ function renderSignals(signals) {
   }).join('');
 }
 
+// ── Factor basket ────────────────────────────────────────────────────────────
+function renderFactorBasket(d, signals) {
+  const basketSig = signals.find(s => s.name?.includes('Factor Basket'));
+  const qualSig   = signals.find(s => s.name?.includes('Quality Factor (IWFQ) weight'));
+  const valSig    = signals.find(s => s.name?.includes('Value Factor (IWFV) weight'));
+  const momSig    = signals.find(s => s.name?.includes('Momentum Factor (IWFM) weight'));
+  const gldFacSig  = signals.find(s => s.name?.includes('Gold Factor (GLD) weight'));
+  const jepgFacSig = signals.find(s => s.name?.includes('JEPG Factor weight'));
+
+  // Overall basket state
+  const basketText = basketSig?.signal || '';
+  const stateEl = document.getElementById('factorBasketState');
+  const sigEl   = document.getElementById('factorBasketSignal');
+
+  let state = 'neutral';
+  if (basketText.includes('EXIT')) state = 'exit';
+  else if (basketText.includes('REDUCE')) state = 'reduce';
+  else if (basketText.includes('ACTIVE') || basketText.includes('BIASED')) state = 'active';
+
+  if (stateEl) {
+    stateEl.className = 'factor-basket-state ' + state;
+    stateEl.textContent = state === 'exit' ? 'EXIT' : state === 'reduce' ? 'REDUCE' :
+                          state === 'active' ? 'ACTIVE' : 'MONITOR';
+  }
+  if (sigEl) sigEl.textContent = basketText.replace(/▽▽|▽|▲|◆/g,'').trim();
+
+  // Individual factor rows
+  function renderFactor(prefix, sigObj, heatVal) {
+    const sigText = sigObj?.signal || '—';
+    const clean   = sigText.replace(/▽▽|▽|▲|◆/g,'').trim();
+    const dotEl   = document.getElementById(prefix + 'Dot');
+    const sigEl2  = document.getElementById(prefix + 'Signal');
+    const heatEl  = document.getElementById(prefix + 'Heat');
+    const barEl   = document.getElementById(prefix + 'Bar');
+
+    // Extract weight % from signal text
+    const wMatch  = clean.match(/(\d{1,2})-?(\d{1,2})%/);
+    const weight  = wMatch ? (parseInt(wMatch[1]) + (wMatch[2] ? parseInt(wMatch[2]) : parseInt(wMatch[1]))) / 2 : 33;
+    const maxW    = 100; // no hard caps — pure risk-adjusted heat
+    const pct     = Math.min((weight / maxW) * 100, 100).toFixed(0);
+
+    const isExit    = sigText.includes('EXIT') || sigText.includes('▽▽');
+    const isReduce  = sigText.includes('▽') && !isExit;
+    const isActive  = sigText.includes('▲');
+    const col = isExit ? 'var(--red)' : isReduce ? 'var(--amber)' :
+                isActive ? 'var(--green)' : 'var(--muted)';
+
+    if (dotEl)  { dotEl.style.background = col; if (isActive) dotEl.style.boxShadow = `0 0 5px ${col}`; }
+    if (sigEl2) sigEl2.textContent = clean;
+    if (heatEl) {
+      heatEl.textContent = heatVal != null ? (heatVal >= 0 ? '+' : '') + heatVal.toFixed(4) : '—';
+      heatEl.style.color = heatVal > 0 ? 'var(--green)' : heatVal < 0 ? 'var(--red)' : 'var(--muted)';
+    }
+    if (barEl) {
+      barEl.style.width    = pct + '%';
+      barEl.style.background = col;
+    }
+  }
+
+  renderFactor('iwfq', qualSig,   d?.tactical?.iwfq?.heat ?? null);
+  renderFactor('iwfv', valSig,    d?.tactical?.iwfv?.heat ?? null);
+  renderFactor('iwfm', momSig,    d?.tactical?.iwfm?.heat ?? null);
+  renderFactor('gld',     gldFacSig,  d?.commodities?.gld?.heat ?? null);
+  renderFactor('jepgFac', jepgFacSig, d?.tactical?.jepg?.heat ?? null);
+}
+
 // ── Tactical ──────────────────────────────────────────────────────────────────
 function renderTactical(d) {
   const signals = d.signals || [];
@@ -714,6 +846,9 @@ function renderTactical(d) {
   gateEl.className = 'gate-signal ' +
     (gateState === 'open' ? 'green' : gateState === 'partial' ? 'amber' : 'red');
   document.getElementById('tactGateDetail').textContent = gateSig?.rationale || '';
+
+  // ── Factor basket rendering ───────────────────────────────────────────────
+  renderFactorBasket(d, signals);
 
   // ── Gate progress indicator ───────────────────────────────────────────────
   const gateScoreVal = d?.engine?.score ?? null;
