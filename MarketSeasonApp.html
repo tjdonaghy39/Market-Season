@@ -527,7 +527,9 @@ const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 let liveData = null;
 let refreshTimer = null;
 let isLoading = false;
-let aiHasRun   = false;  // auto-run AI once on first load
+let aiHasRun        = false;   // auto-run AI once on first load
+let fetchController = null;    // AbortController for current fetch
+let loadingStartTime = 0;      // watchdog: detect stuck fetch on tab resume
 
 // ── Navigation ───────────────────────────────────────────────────────────────
 function showPage(id) {
@@ -539,20 +541,35 @@ function showPage(id) {
 
 // ── Fetch from Google Sheet API ──────────────────────────────────────────────
 async function fetchData(manual = false) {
-  if (isLoading) return;
+  // Abort any in-flight fetch before starting a new one
+  if (fetchController) { fetchController.abort(); fetchController = null; }
   isLoading = true;
+  fetchController = new AbortController();
   const btn = document.getElementById('refreshBtn');
   btn.classList.add('spinning');
   document.getElementById('refreshStatus').textContent = 'refreshing...';
   document.getElementById('errBanner').classList.remove('show');
 
+  loadingStartTime = Date.now();
+
+  // Hard timeout — abort if Apps Script takes > 25 seconds
+  // (4s recalculation sleep + ~8s processing + network = allow 25s total)
+  const timeoutId = setTimeout(() => {
+    if (fetchController) {
+      fetchController.abort();
+      fetchController = null;
+    }
+  }, 25000);
+
   try {
     const res = await fetch(SHEET_API_URL + '?t=' + Date.now(), {
-        redirect: 'follow'
+        redirect: 'follow',
+        signal: fetchController.signal
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       liveData = await res.json();
       if (liveData.error) throw new Error(liveData.error);
+    clearTimeout(timeoutId);
     renderAll(liveData);
     const now = new Date();
     document.getElementById('refreshStatus').textContent =
@@ -563,11 +580,24 @@ async function fetchData(manual = false) {
       setTimeout(runAI, 400); // small delay so render completes first
     }
   } catch(e) {
+    // Ignore AbortError — this is intentional (tab suspension / new fetch started)
+    clearTimeout(timeoutId);
+    if (e.name === 'AbortError') {
+      // Show last known data timestamp or prompt to refresh
+      document.getElementById('refreshStatus').textContent =
+        liveData ? 'live · ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : 'tap ↻ to refresh';
+      btn.classList.remove('spinning');
+      isLoading = false;
+      fetchController = null;
+      // Reschedule refresh — don't leave the timer dead after an abort
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => fetchData(), REFRESH_INTERVAL_MS);
+      return;
+    }
     const banner = document.getElementById('errBanner');
     banner.textContent = 'Data error: ' + e.message + '. Using last known data.';
     banner.classList.add('show');
     if (!liveData) {
-      // Don't show demo data — show explicit error state
       const focusList = document.getElementById('focusList');
       if (focusList) focusList.innerHTML = `
         <div class="focus-card">
@@ -576,12 +606,14 @@ async function fetchData(manual = false) {
           </div>
         </div>`;
       document.getElementById('refreshStatus').textContent = 'error — tap to retry';
+    } else {
+      document.getElementById('refreshStatus').textContent = 'error · retrying';
     }
-    document.getElementById('refreshStatus').textContent = 'error · retrying';
   }
 
   btn.classList.remove('spinning');
   isLoading = false;
+  fetchController = null;
 
   // Schedule next auto-refresh
   clearTimeout(refreshTimer);
@@ -1438,12 +1470,29 @@ window.addEventListener('load', () => {
   fetchData();
 });
 
-// Refresh on visibility change (coming back to app)
+// ── Handle tab resume (Chrome Android suspension fix) ────────────────────────
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) {
-    const lastRefresh = liveData?.refreshed ? new Date(liveData.refreshed) : null;
-    const stale = !lastRefresh || (Date.now() - lastRefresh.getTime()) > REFRESH_INTERVAL_MS;
-    if (stale) fetchData();
+  if (document.hidden) {
+    // Tab being hidden — abort any in-flight fetch to prevent hanging on resume
+    if (fetchController) { fetchController.abort(); fetchController = null; }
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+    isLoading = false;
+  } else {
+    // Tab becoming visible — reset any stuck state before refreshing
+    // Watchdog: if fetch was in flight for > 30s before tab was hidden, it's dead
+    const elapsed = loadingStartTime ? Date.now() - loadingStartTime : 99999;
+    if (isLoading && elapsed > 30000) {
+      // Stuck fetch — force reset
+      if (fetchController) { fetchController.abort(); fetchController = null; }
+      isLoading = false;
+    }
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+    isLoading = false;        // always reset — Chrome may have killed the fetch silently
+    fetchController = null;
+    showLoadingState();
+    fetchData();              // always refetch on resume — data may be hours old
   }
 });
 </script>
