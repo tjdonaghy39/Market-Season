@@ -620,16 +620,41 @@ function renderHero(eng) {
 // ── Focus ─────────────────────────────────────────────────────────────────────
 function renderFocus(eng) {
   const list = document.getElementById('focusList');
+  const score = eng?.score ?? null;
+
+  // Fallback focus text derived from score if API returns null
+  function fallback(n) {
+    if (score === null) return null;
+    if (n === 1) {
+      if (score <= -4) return 'AVOID ALL EQUITIES. Max defensives: short bonds + TIP + cash.';
+      if (score <= -2) return 'Short bonds + TIP. Rate vol elevated — avoid long-duration linkers. Reduce equities.';
+      if (score < 0)  return 'Defensive tilt. Short bonds as anchor. Monitor factor basket gate conditions.';
+      if (score < 3)  return 'Cautious re-entry. Quality factor first. Monitor gate for basket activation.';
+      return 'Factor basket active. Let risk-adjusted heat determine allocation.';
+    }
+    if (n === 2) {
+      if (score <= -2) return 'Rate vol override: TIP only linker if holding. Long bonds neutral. Value tilt on residual equity.';
+      if (score < 0)  return 'Watch copper/gold and XLY/XLP for gate conditions. JEPG if equity directionless.';
+      return 'Monitor factor weights. Rebalance only on meaningful weight shifts.';
+    }
+    if (n === 3) {
+      if (score <= -2) return 'TLT heat turning positive = inflation peaking = upgrade long bonds. Copper/Gold base = early recovery signal.';
+      return 'Watch for VIX compression + SPX heat turning positive. Momentum factor qualifying = regime shift.';
+    }
+    return null;
+  }
+
   const items = [
-    { num: '#1 PRIMARY', text: eng.focus1, cls: '' },
-    { num: '#2 SECONDARY', text: eng.focus2, cls: '' },
-    { num: '#3 WATCH', text: eng.focus3, cls: 'watch' },
+    { num: '#1 PRIMARY',   text: eng.focus1 || fallback(1), cls: '' },
+    { num: '#2 SECONDARY', text: eng.focus2 || fallback(2), cls: '' },
+    { num: '#3 WATCH',     text: eng.focus3 || fallback(3), cls: 'watch' },
   ].filter(i => i.text);
-  list.innerHTML = items.map(i => `
+
+  list.innerHTML = items.length ? items.map(i => `
     <div class="focus-card ${i.cls}">
       <div class="focus-num">${i.num}</div>
       <div class="focus-text">${i.text}</div>
-    </div>`).join('');
+    </div>`).join('') : '<div class="focus-card"><div class="focus-text" style="color:var(--muted)">Loading focus areas…</div></div>';
 }
 
 // ── Signals ───────────────────────────────────────────────────────────────────
