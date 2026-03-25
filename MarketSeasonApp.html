@@ -529,7 +529,9 @@ let refreshTimer = null;
 let isLoading = false;
 let aiHasRun        = false;   // auto-run AI once on first load
 let fetchController = null;    // AbortController for current fetch
-let loadingStartTime = 0;      // watchdog: detect stuck fetch on tab resume
+let loadingStartTime    = 0;    // watchdog: detect stuck fetch on tab resume
+let lastSuccessfulLoad  = 0;    // timestamp of last completed fetch
+let hiddenAt            = 0;    // timestamp when tab was hidden
 
 // ── Navigation ───────────────────────────────────────────────────────────────
 function showPage(id) {
@@ -570,6 +572,7 @@ async function fetchData(manual = false) {
       liveData = await res.json();
       if (liveData.error) throw new Error(liveData.error);
     clearTimeout(timeoutId);
+    lastSuccessfulLoad = Date.now();
     renderAll(liveData);
     const now = new Date();
     document.getElementById('refreshStatus').textContent =
@@ -1471,28 +1474,44 @@ window.addEventListener('load', () => {
 });
 
 // ── Handle tab resume (Chrome Android suspension fix) ────────────────────────
+// MIN_HIDDEN_MS: tab must have been hidden for at least this long before we
+// treat the resume as a genuine "coming back after suspension" event.
+// This prevents maximising/resizing the window from triggering a full refetch.
+const MIN_HIDDEN_MS    = 30 * 1000;   // 30 seconds — filters out window focus events
+const STALE_AFTER_MS   = 30 * 60 * 1000; // 30 minutes — data considered stale
+
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
-    // Tab being hidden — abort any in-flight fetch to prevent hanging on resume
+    // Tab going to background — record when, abort in-flight fetch
+    hiddenAt = Date.now();
     if (fetchController) { fetchController.abort(); fetchController = null; }
     clearTimeout(refreshTimer);
     refreshTimer = null;
     isLoading = false;
   } else {
-    // Tab becoming visible — reset any stuck state before refreshing
-    // Watchdog: if fetch was in flight for > 30s before tab was hidden, it's dead
-    const elapsed = loadingStartTime ? Date.now() - loadingStartTime : 99999;
-    if (isLoading && elapsed > 30000) {
-      // Stuck fetch — force reset
-      if (fetchController) { fetchController.abort(); fetchController = null; }
-      isLoading = false;
-    }
+    // Tab becoming visible
+    const hiddenDuration = hiddenAt ? Date.now() - hiddenAt : 0;
+    const dataAge        = lastSuccessfulLoad ? Date.now() - lastSuccessfulLoad : 99999999;
+
+    // Only treat as genuine resume if hidden for > 30 seconds
+    // Short visibility changes (window resize, maximise, alt-tab) are ignored
+    if (hiddenDuration < MIN_HIDDEN_MS) return;
+
+    // Reset any stuck loading state (fetch may have been killed while suspended)
+    isLoading = false;
+    fetchController = null;
     clearTimeout(refreshTimer);
     refreshTimer = null;
-    isLoading = false;        // always reset — Chrome may have killed the fetch silently
-    fetchController = null;
-    showLoadingState();
-    fetchData();              // always refetch on resume — data may be hours old
+
+    if (dataAge > STALE_AFTER_MS) {
+      // Data is old enough to warrant a full refresh with loading state
+      showLoadingState();
+      fetchData();
+    } else {
+      // Data is still fresh — just restart the auto-refresh timer quietly
+      // No visible loading state, no refetch — data is good
+      refreshTimer = setTimeout(() => fetchData(), REFRESH_INTERVAL_MS);
+    }
   }
 });
 </script>
