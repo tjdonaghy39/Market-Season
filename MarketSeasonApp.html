@@ -522,6 +522,7 @@
 // ════════════════════════════════════════════════════════════════════════════
 const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbxlhY6Lfh9f6Ym9pBwid-Kyps-wtHKRYzCTLcn7nc_2P_1fMNwh9CloYKQxOk1S9bhWIg/exec';
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_KEY = 'marketSeasonCache_v4';  // sessionStorage key for last known data
 
 // ── State ────────────────────────────────────────────────────────────────────
 let liveData = null;
@@ -554,14 +555,14 @@ async function fetchData(manual = false) {
 
   loadingStartTime = Date.now();
 
-  // Hard timeout — abort if Apps Script takes > 25 seconds
-  // (4s recalculation sleep + ~8s processing + network = allow 25s total)
+  // Hard timeout — abort if Apps Script takes > 20 seconds
+  // (2s recalculation sleep + ~5s processing + network = allow 20s total)
   const timeoutId = setTimeout(() => {
     if (fetchController) {
       fetchController.abort();
       fetchController = null;
     }
-  }, 25000);
+  }, 20000);
 
   try {
     const res = await fetch(SHEET_API_URL + '?t=' + Date.now(), {
@@ -573,6 +574,8 @@ async function fetchData(manual = false) {
       if (liveData.error) throw new Error(liveData.error);
     clearTimeout(timeoutId);
     lastSuccessfulLoad = Date.now();
+    // Cache the fresh data for instant display on next open
+    try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(liveData)); } catch(e) {}
     renderAll(liveData);
     const now = new Date();
     document.getElementById('refreshStatus').textContent =
@@ -1143,7 +1146,8 @@ const EVENTS_CACHE_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 function renderEvents() {
   const stale = !eventsLastLoaded || (Date.now() - eventsLastLoaded) > EVENTS_CACHE_MS;
-  if (stale) loadEvents(false);
+  // Stagger events load 10s after AI analysis to avoid simultaneous API calls
+  if (stale) setTimeout(() => loadEvents(false), 10000);
 }
 
 async function loadEvents(manual) {
@@ -1469,8 +1473,20 @@ function showLoadingState() {
 }
 
 window.addEventListener('load', () => {
-  showLoadingState();
-  fetchData();
+  // Try to show cached data instantly — eliminates perceived wait
+  try {
+    const cached = sessionStorage.getItem(CACHE_KEY);
+    if (cached) {
+      liveData = JSON.parse(cached);
+      renderAll(liveData);  // show stale data immediately
+      document.getElementById('refreshStatus').textContent = 'updating…';
+    } else {
+      showLoadingState();
+    }
+  } catch(e) {
+    showLoadingState();
+  }
+  fetchData(); // always fetch fresh in background
 });
 
 // ── Handle tab resume (Chrome Android suspension fix) ────────────────────────
