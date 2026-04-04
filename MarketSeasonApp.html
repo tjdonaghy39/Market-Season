@@ -557,6 +557,10 @@ async function fetchFromGist() {
   if (!res.ok) throw new Error('Gist HTTP ' + res.status);
   const data = await res.json();
   if (data.error) throw new Error(data.error);
+  // Validate the Gist contains actual market data (not GitHub wrapper or empty file)
+  if (!data.engine || !data.engine.score === undefined) {
+    throw new Error('Gist data invalid or not yet populated — run action=push first');
+  }
   return data;
 }
 
@@ -692,6 +696,7 @@ function renderAll(d) {
 
 // ── Hero ─────────────────────────────────────────────────────────────────────
 function renderHero(eng) {
+  if (!eng) return;
   const score = eng.score || 0;
   document.getElementById('heroDate').textContent =
     'MARKET SEASON · ' + new Date().toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'}).toUpperCase();
@@ -725,6 +730,7 @@ function renderHero(eng) {
 
 // ── Focus ─────────────────────────────────────────────────────────────────────
 function renderFocus(eng) {
+  if (!eng) return;
   const list = document.getElementById('focusList');
   const score = eng?.score ?? null;
 
@@ -1131,6 +1137,7 @@ function renderHeat(d) {
 
 // ── Scores ────────────────────────────────────────────────────────────────────
 function renderScores(eng) {
+  if (!eng) return;
   const sub = eng.subScores || {};
   const items = [
     { name: 'Equity momentum', score: sub.equity, rule: '>0.3% heat & >5% 60D = +2 · both neg = −1' },
@@ -1577,10 +1584,13 @@ window.addEventListener('load', () => {
   try {
     const cached = localStorage.getItem(CACHE_KEY);
     if (cached) {
-      liveData = JSON.parse(cached);
-      renderAll(liveData);
+      const parsed = JSON.parse(cached);
+      if (parsed && parsed.engine && parsed.engine.score !== undefined) {
+        liveData = parsed;
+        renderAll(liveData);
+      }
       // Show age of cached data while background refresh runs
-      const age = formatAge(liveData.refreshed);
+      const age = liveData ? formatAge(liveData.refreshed) : null;
       document.getElementById('refreshStatus').textContent = age ? 'cached · ' + age : 'updating…';
       const sourceEl = document.getElementById('dataSource');
       if (sourceEl) sourceEl.textContent = '⟳ updating';
