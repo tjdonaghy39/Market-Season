@@ -244,7 +244,9 @@
     <div class="refresh-status" id="refreshStatus">connecting...</div>
   </div>
   <div class="header-right">
-    <button class="refresh-btn" id="refreshBtn" onclick="fetchData(true)">↻</button>
+    <button class="refresh-btn" id="refreshBtn" onclick="fetchData(true)" title="Refresh from snapshot">↻</button>
+    <button onclick="fetchData(true, true)" title="Fetch live from sheet" style="font-size:11px;padding:3px 8px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:6px;color:inherit;cursor:pointer;margin-left:4px;">live</button>
+    <span id="dataSource" style="font-size:10px;opacity:0.6;margin-left:6px;"></span>
   </div>
 </header>
 
@@ -289,7 +291,8 @@
     <div class="ai-card">
       <div class="ai-head">
         <div class="ai-title">CLAUDE · LIVE ANALYSIS</div>
-        <button class="ai-run-btn" id="aiBtn" onclick="runAI()">ANALYSE ↗</button>
+        <button class="ai-run-btn" id="aiBtn" onclick="runAI(true)">ANALYSE ↗</button>
+        <span id="aiStatus" style="font-size:10px;opacity:0.6;margin-left:8px;"></span>
       </div>
       <div class="ai-body" id="aiBody">Tap ANALYSE to generate today's market season commentary using live data and current news context.</div>
     </div>
@@ -493,7 +496,7 @@
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden">
       <div style="padding:11px 14px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
         <div style="font-size:11px;font-family:var(--mono);color:var(--accent)">CLAUDE · LIVE EVENTS BRIEFING</div>
-        <button class="ai-run-btn" id="eventsRefreshBtn" onclick="loadEvents(true)">REFRESH ↗</button>
+        <button class="ai-run-btn" id="eventsRefreshBtn" onclick="loadEvents(true, true)">REFRESH ↗</button>
       </div>
       <div id="eventsStatus" style="padding:8px 14px;font-size:10px;font-family:var(--mono);color:var(--muted);border-bottom:1px solid var(--border);display:none"></div>
       <div id="eventsLoading" style="padding:20px 14px;font-size:13px;color:var(--muted)">
@@ -520,9 +523,12 @@
 // ════════════════════════════════════════════════════════════════════════════
 // CONFIG — paste your Apps Script Web App URL here after deploying
 // ════════════════════════════════════════════════════════════════════════════
-const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbxlhY6Lfh9f6Ym9pBwid-Kyps-wtHKRYzCTLcn7nc_2P_1fMNwh9CloYKQxOk1S9bhWIg/exec';
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-const CACHE_KEY = 'marketSeasonCache_v4';  // sessionStorage key for last known data
+const SHEET_API_URL  = 'https://script.google.com/macros/s/AKfycbxlhY6Lfh9f6Ym9pBwid-Kyps-wtHKRYzCTLcn7nc_2P_1fMNwh9CloYKQxOk1S9bhWIg/exec';
+// ↓ Paste your Gist raw URL here after setup (see instructions below)
+const GIST_RAW_URL   = 'https://gist.githubusercontent.com/tjdonaghy39/a2662b0f14b891e88a705caf67270f0d/raw/market_data.json';
+const GIST_MAX_AGE_MS = 4 * 60 * 60 * 1000;  // warn if snapshot older than 4h
+const REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 min background refresh (from Gist)
+const CACHE_KEY = 'marketSeasonCache_v5';  // localStorage key
 
 // ── State ────────────────────────────────────────────────────────────────────
 let liveData = null;
@@ -542,78 +548,124 @@ function showPage(id) {
   document.getElementById('nav-' + id).classList.add('active');
 }
 
-// ── Fetch from Google Sheet API ──────────────────────────────────────────────
-async function fetchData(manual = false) {
-  // Abort any in-flight fetch before starting a new one
+// ── Fetch helpers ────────────────────────────────────────────────────────────
+
+// Fast path: read from GitHub Gist (CDN-cached static JSON, sub-100ms)
+async function fetchFromGist() {
+  if (!GIST_RAW_URL) throw new Error('GIST_RAW_URL not configured');
+  const res = await fetch(GIST_RAW_URL + '?t=' + Date.now());
+  if (!res.ok) throw new Error('Gist HTTP ' + res.status);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
+// Slow path: live fetch from Apps Script (triggers sheet recalc ~5-15s)
+async function fetchFromSheet() {
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), 25000);
+  try {
+    const res = await fetch(SHEET_API_URL + '?t=' + Date.now(), {
+      redirect: 'follow', signal: ctrl.signal
+    });
+    clearTimeout(tid);
+    if (!res.ok) throw new Error('Sheet HTTP ' + res.status);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    return data;
+  } catch(e) { clearTimeout(tid); throw e; }
+}
+
+// Format snapshot age: "2h 14m ago" / "just now" / "3d ago"
+function formatAge(ts) {
+  if (!ts) return '';
+  const ms = Date.now() - new Date(ts).getTime();
+  if (ms < 90000)  return 'just now';
+  if (ms < 3600000) return Math.floor(ms/60000) + 'm ago';
+  const h = Math.floor(ms/3600000), m = Math.floor((ms%3600000)/60000);
+  if (h < 24) return h + 'h' + (m > 0 ? ' ' + m + 'm' : '') + ' ago';
+  return Math.floor(h/24) + 'd ago';
+}
+
+// ── Main fetch: Gist-first, Sheet as live fallback ────────────────────────────
+async function fetchData(manual = false, forceLive = false) {
   if (fetchController) { fetchController.abort(); fetchController = null; }
   isLoading = true;
   fetchController = new AbortController();
-  const btn = document.getElementById('refreshBtn');
+  const btn     = document.getElementById('refreshBtn');
+  const statusEl = document.getElementById('refreshStatus');
+  const sourceEl = document.getElementById('dataSource');
   btn.classList.add('spinning');
-  document.getElementById('refreshStatus').textContent = 'refreshing...';
   document.getElementById('errBanner').classList.remove('show');
-
   loadingStartTime = Date.now();
 
-  // Hard timeout — abort if Apps Script takes > 20 seconds
-  // (2s recalculation sleep + ~5s processing + network = allow 20s total)
-  const timeoutId = setTimeout(() => {
-    if (fetchController) {
-      fetchController.abort();
-      fetchController = null;
-    }
-  }, 20000);
-
   try {
-    const res = await fetch(SHEET_API_URL + '?t=' + Date.now(), {
-        redirect: 'follow',
-        signal: fetchController.signal
-      });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      liveData = await res.json();
-      if (liveData.error) throw new Error(liveData.error);
-    clearTimeout(timeoutId);
-    lastSuccessfulLoad = Date.now();
-    // Cache the fresh data for instant display on next open
-    try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(liveData)); } catch(e) {}
-    renderAll(liveData);
-    const now = new Date();
-    document.getElementById('refreshStatus').textContent =
-      'live · ' + now.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
-    // Auto-run AI analysis after data loads (first load or manual refresh)
-    if (!aiHasRun || manual) {
-      aiHasRun = true;
-      setTimeout(runAI, 400); // small delay so render completes first
+    let data, source;
+    statusEl.textContent = forceLive ? 'fetching live…' : 'updating…';
+
+    if (forceLive || !GIST_RAW_URL) {
+      data = await fetchFromSheet();
+      source = 'live';
+    } else {
+      try {
+        data = await fetchFromGist();
+        source = 'gist';
+      } catch(gErr) {
+        console.warn('Gist failed, trying live:', gErr.message);
+        statusEl.textContent = 'snapshot unavailable, fetching live…';
+        data = await fetchFromSheet();
+        source = 'live-fallback';
+      }
     }
+
+    liveData = data;
+    lastSuccessfulLoad = Date.now();
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify(liveData)); } catch(e) {}
+    renderAll(liveData);
+
+    const pushedAt = liveData.refreshed || null;
+    const age = formatAge(pushedAt);
+    const isStale = pushedAt && (Date.now() - new Date(pushedAt).getTime()) > GIST_MAX_AGE_MS;
+
+    if (source === 'live' || source === 'live-fallback') {
+      statusEl.textContent = 'live · ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+      if (sourceEl) sourceEl.textContent = '● live';
+    } else {
+      statusEl.textContent = age ? 'snapshot · ' + age : 'snapshot';
+      if (sourceEl) sourceEl.textContent = (isStale ? '⚠ ' : '✓ ') + (age || '');
+    }
+
+    if (isStale) {
+      const banner = document.getElementById('errBanner');
+      banner.textContent = 'Snapshot is ' + age + '. Tap "live" for current data.';
+      banner.classList.add('show');
+    }
+
+    if (!aiHasRun || manual || forceLive) {
+      aiHasRun = true;
+      setTimeout(runAI, 400);
+    }
+
   } catch(e) {
-    // Ignore AbortError — this is intentional (tab suspension / new fetch started)
-    clearTimeout(timeoutId);
     if (e.name === 'AbortError') {
-      // Show last known data timestamp or prompt to refresh
-      document.getElementById('refreshStatus').textContent =
-        liveData ? 'live · ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : 'tap ↻ to refresh';
+      statusEl.textContent = liveData ? 'snapshot · ' + formatAge(liveData.refreshed) : 'tap ↻ to refresh';
       btn.classList.remove('spinning');
       isLoading = false;
       fetchController = null;
-      // Reschedule refresh — don't leave the timer dead after an abort
       clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => fetchData(), REFRESH_INTERVAL_MS);
       return;
     }
     const banner = document.getElementById('errBanner');
-    banner.textContent = 'Data error: ' + e.message + '. Using last known data.';
+    banner.textContent = 'Error: ' + e.message + (liveData ? ' · showing last snapshot' : '');
     banner.classList.add('show');
     if (!liveData) {
       const focusList = document.getElementById('focusList');
-      if (focusList) focusList.innerHTML = `
-        <div class="focus-card">
-          <div class="focus-text" style="color:var(--red)">
-            ⚠ Could not load live data. Check connection and refresh.
-          </div>
-        </div>`;
-      document.getElementById('refreshStatus').textContent = 'error — tap to retry';
+      if (focusList) focusList.innerHTML =
+        '<div class="focus-card"><div class="focus-text" style="color:var(--red)">⚠ Could not load data. Check connection and tap ↻.</div></div>';
+      statusEl.textContent = 'error — tap ↻';
     } else {
-      document.getElementById('refreshStatus').textContent = 'error · retrying';
+      statusEl.textContent = 'error · using snapshot';
     }
   }
 
@@ -1140,22 +1192,77 @@ function renderMarkets(d) {
     table(row('VIX',v?.vix)+row('VVIX',v?.vvix));
 }
 
+// ── Render events data into the events tab ───────────────────────────────────
+function renderEventsData(events, forecast, statusEl, list, loading) {
+  if (loading) loading.style.display = 'none';
+  list.innerHTML = events.map(e => {
+    const gateTag = e.gateRelevant
+      ? '<span style="margin-left:6px;font-size:9px;font-family:var(--mono);background:rgba(124,111,255,.15);color:var(--accent);padding:2px 6px;border-radius:6px">GATE RELEVANT</span>'
+      : '';
+    const horizonColor = e.horizon === 'near-term' ? 'var(--amber)' : e.horizon === 'structural' ? 'var(--accent)' : 'var(--muted)';
+    return `
+      <div class="ev-card">
+        <div class="ev-top">
+          <div class="ev-title">${e.title}${gateTag}</div>
+          <div class="ev-date">${e.date}</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+          <span class="ev-badge ${e.impact}">${e.impact.toUpperCase()} IMPACT</span>
+          <span style="font-size:9px;font-family:var(--mono);color:${horizonColor}">${(e.horizon||'').toUpperCase()}</span>
+        </div>
+        <div class="ev-note">${e.note}</div>
+      </div>`;
+  }).join('');
+  if (forecast) {
+    list.innerHTML += `
+      <div style="margin:8px 0 0;background:var(--surface);border:1px solid var(--border2);border-radius:12px;overflow:hidden">
+        <div style="padding:10px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10px;font-family:var(--mono);color:var(--accent);letter-spacing:.1em">SEASONAL TRANSITION FORECAST</div>
+        <div style="padding:13px 14px;font-size:12px;color:var(--muted);line-height:1.65;white-space:pre-wrap">${forecast}</div>
+      </div>`;
+  }
+}
+
+
 // ── Events — AI powered ───────────────────────────────────────────────────────
 let eventsLastLoaded = null;
 const EVENTS_CACHE_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 function renderEvents() {
-  const stale = !eventsLastLoaded || (Date.now() - eventsLastLoaded) > EVENTS_CACHE_MS;
-  // Stagger events load 10s after AI analysis to avoid simultaneous API calls
-  if (stale) setTimeout(() => loadEvents(false), 10000);
+  // Always try to show cached events immediately from Gist
+  const cached = liveData?.cachedEvents;
+  if (cached && !cached.error) {
+    const list = document.getElementById('eventsList');
+    const statusEl = document.getElementById('eventsStatus');
+    const loading = document.getElementById('eventsLoading');
+    const age = formatAge(cached.refreshed);
+    renderEventsData(cached.events || [], cached.forecast || '', statusEl, list, loading);
+    statusEl.textContent = age ? 'snapshot · ' + age + ' · tap REFRESH ↗ for live' : 'cached';
+    statusEl.style.display = 'block';
+    eventsLastLoaded = Date.now();
+  } else {
+    // No cache — stagger live load 10s after AI to avoid simultaneous calls
+    setTimeout(() => loadEvents(false, true), 10000);
+  }
 }
 
-async function loadEvents(manual) {
+async function loadEvents(manual = false, forceLive = false) {
   const btn      = document.getElementById('eventsRefreshBtn');
   const loading  = document.getElementById('eventsLoading');
   const list     = document.getElementById('eventsList');
   const statusEl = document.getElementById('eventsStatus');
 
+  // Use Gist-cached events unless forced live
+  const cached = !forceLive && liveData?.cachedEvents;
+  if (cached && !cached.error) {
+    const age = formatAge(cached.refreshed);
+    eventsLastLoaded = Date.now();
+    renderEventsData(cached.events || [], cached.forecast || '', statusEl, list, loading);
+    statusEl.textContent = age ? 'snapshot · ' + age + ' · tap REFRESH ↗ for live' : 'cached';
+    statusEl.style.display = 'block';
+    return;
+  }
+
+  // Live fetch from Apps Script
   btn.disabled = true;
   btn.textContent = '...';
   loading.style.display = 'block';
@@ -1178,37 +1285,10 @@ async function loadEvents(manual) {
     const forecast = data.forecast || '';
 
     statusEl.textContent = 'Generated ' + new Date().toLocaleTimeString('en-GB',
-      {hour:'2-digit', minute:'2-digit'}) + ' · auto-refreshes every 6 hours';
+      {hour:'2-digit', minute:'2-digit'}) + ' · tap REFRESH ↗ to update';
     statusEl.style.display = 'block';
 
-    // Render events
-    list.innerHTML = events.map(e => {
-      const gateTag = e.gateRelevant
-        ? '<span style="margin-left:6px;font-size:9px;font-family:var(--mono);background:rgba(124,111,255,.15);color:var(--accent);padding:2px 6px;border-radius:6px">GATE RELEVANT</span>'
-        : '';
-      const horizonColor = e.horizon === 'near-term' ? 'var(--amber)' : e.horizon === 'structural' ? 'var(--accent)' : 'var(--muted)';
-      return `
-        <div class="ev-card">
-          <div class="ev-top">
-            <div class="ev-title">${e.title}${gateTag}</div>
-            <div class="ev-date">${e.date}</div>
-          </div>
-          <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
-            <span class="ev-badge ${e.impact}">${e.impact.toUpperCase()} IMPACT</span>
-            <span style="font-size:9px;font-family:var(--mono);color:${horizonColor}">${(e.horizon||''). toUpperCase()}</span>
-          </div>
-          <div class="ev-note">${e.note}</div>
-        </div>`;
-    }).join('');
-
-    // Render forecast section
-    if (forecast) {
-      list.innerHTML += `
-        <div style="margin:8px 0 0;background:var(--surface);border:1px solid var(--border2);border-radius:12px;overflow:hidden">
-          <div style="padding:10px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10px;font-family:var(--mono);color:var(--accent);letter-spacing:.1em">SEASONAL TRANSITION FORECAST</div>
-          <div style="padding:13px 14px;font-size:12px;color:var(--muted);line-height:1.65;white-space:pre-wrap">${forecast}</div>
-        </div>`;
-    }
+    renderEventsData(events, forecast, statusEl, list, loading);
 
   } catch(e) {
     loading.style.display = 'none';
@@ -1263,13 +1343,56 @@ function buildAIContext() {
   };
 }
 
-async function runAI() {
+// ── Render parsed AI analysis JSON into a DOM element ────────────────────────
+function renderAnalysisText(text, body) {
+  try {
+    const clean = text.replace(/```json|```/g, '').trim();
+    const j = JSON.parse(clean);
+    const confirms = (j.confirmations || j.confirms || []).map(b => `<div class="ai-bullet">${b}</div>`).join('');
+    const contradicts = (j.contradictions || j.contradicts || []).map(b => `<div class="ai-bullet">${b}</div>`).join('');
+    const t = j.transition || {};
+    body.innerHTML = `
+      <div class="ai-verdict">${j.verdict || ''}</div>
+      ${confirms ? `<div class="ai-section"><div class="ai-section-label green">CONFIRMATIONS</div>${confirms}</div>` : ''}
+      ${contradicts ? `<div class="ai-section"><div class="ai-section-label red">CONTRADICTIONS</div>${contradicts}</div>` : ''}
+      ${j.watch ? `<div class="ai-section"><div class="ai-section-label amber">WATCH NEXT 48H</div><div class="ai-watch">${j.watch}</div></div>` : ''}
+      <div class="ai-section">
+        <div class="ai-section-label accent">TRANSITION PROBABILITY</div>
+        <div class="ai-prob-grid">
+          <div class="ai-prob-cell"><div class="ai-prob-label">4 WEEKS</div><div class="ai-prob-val">${t['4w'] || '—'}</div></div>
+          <div class="ai-prob-cell"><div class="ai-prob-label">8 WEEKS</div><div class="ai-prob-val">${t['8w'] || '—'}</div></div>
+          <div class="ai-prob-cell"><div class="ai-prob-label">3 MONTHS</div><div class="ai-prob-val">${t['3m'] || '—'}</div></div>
+        </div>
+        ${t.first_indicator ? `<div class="ai-bullet">${t.first_indicator}</div>` : ''}
+        ${t.split ? `<div class="ai-split">${t.split}</div>` : ''}
+      </div>`;
+  } catch(e) {
+    body.textContent = text || 'No analysis returned.';
+  }
+}
+
+async function runAI(forceLive = false) {
   const btn  = document.getElementById('aiBtn');
   const body = document.getElementById('aiBody');
   btn.disabled = true; btn.textContent = '...';
   body.classList.remove('loaded');
-  body.innerHTML = 'Searching markets & analysing<span class="cursor"></span>';
 
+  // Use Gist-cached analysis unless forced live
+  const cached = !forceLive && liveData?.cachedAnalysis;
+  if (cached && !cached.error) {
+    body.classList.add('loaded');
+    const text = cached.analysis || '';
+    const age  = formatAge(cached.refreshed);
+    renderAnalysisText(text, body);
+    // Show age indicator
+    const aiStatus = document.getElementById('aiStatus');
+    if (aiStatus) aiStatus.textContent = age ? 'snapshot · ' + age + ' · tap ANALYSE ↗ for live' : '';
+    btn.disabled = false; btn.textContent = 'ANALYSE ↗';
+    return;
+  }
+
+  // Live fetch from Apps Script
+  body.innerHTML = 'Searching markets & analysing<span class="cursor"></span>';
   try {
     const ctx = encodeURIComponent(JSON.stringify(buildAIContext()));
     const url = SHEET_API_URL + '?action=analysis&context=' + ctx + '&t=' + Date.now();
@@ -1279,30 +1402,7 @@ async function runAI() {
     if (data.error) throw new Error(data.error);
     body.classList.add('loaded');
     const text = data.analysis || '';
-    try {
-      const clean = text.replace(/```json|```/g, '').trim();
-      const j = JSON.parse(clean);
-      const confirms = (j.confirms || []).map(b => `<div class="ai-bullet">${b}</div>`).join('');
-      const contradicts = (j.contradicts || []).map(b => `<div class="ai-bullet">${b}</div>`).join('');
-      const t = j.transition || {};
-      body.innerHTML = `
-        <div class="ai-verdict">${j.verdict || ''}</div>
-        ${confirms ? `<div class="ai-section"><div class="ai-section-label green">CONFIRMATIONS</div>${confirms}</div>` : ''}
-        ${contradicts ? `<div class="ai-section"><div class="ai-section-label red">CONTRADICTIONS</div>${contradicts}</div>` : ''}
-        ${j.watch ? `<div class="ai-section"><div class="ai-section-label amber">WATCH NEXT 48H</div><div class="ai-watch">${j.watch}</div></div>` : ''}
-        <div class="ai-section">
-          <div class="ai-section-label accent">TRANSITION PROBABILITY</div>
-          <div class="ai-prob-grid">
-            <div class="ai-prob-cell"><div class="ai-prob-label">4 WEEKS</div><div class="ai-prob-val">${t['4w'] || '—'}</div></div>
-            <div class="ai-prob-cell"><div class="ai-prob-label">8 WEEKS</div><div class="ai-prob-val">${t['8w'] || '—'}</div></div>
-            <div class="ai-prob-cell"><div class="ai-prob-label">3 MONTHS</div><div class="ai-prob-val">${t['3m'] || '—'}</div></div>
-          </div>
-          ${t.first_indicator ? `<div class="ai-bullet">${t.first_indicator}</div>` : ''}
-          ${t.split ? `<div class="ai-split">${t.split}</div>` : ''}
-        </div>`;
-    } catch(e) {
-      body.textContent = text || 'No analysis returned.';
-    }
+    renderAnalysisText(text, body);
   } catch(e) {
     body.classList.add('loaded');
     body.textContent = 'Analysis unavailable — ' + e.message + '. ';
@@ -1473,20 +1573,25 @@ function showLoadingState() {
 }
 
 window.addEventListener('load', () => {
-  // Try to show cached data instantly — eliminates perceived wait
+  // Show localStorage cache instantly — eliminates all perceived wait
   try {
-    const cached = sessionStorage.getItem(CACHE_KEY);
+    const cached = localStorage.getItem(CACHE_KEY);
     if (cached) {
       liveData = JSON.parse(cached);
-      renderAll(liveData);  // show stale data immediately
-      document.getElementById('refreshStatus').textContent = 'updating…';
+      renderAll(liveData);
+      // Show age of cached data while background refresh runs
+      const age = formatAge(liveData.refreshed);
+      document.getElementById('refreshStatus').textContent = age ? 'cached · ' + age : 'updating…';
+      const sourceEl = document.getElementById('dataSource');
+      if (sourceEl) sourceEl.textContent = '⟳ updating';
     } else {
       showLoadingState();
     }
   } catch(e) {
     showLoadingState();
   }
-  fetchData(); // always fetch fresh in background
+  // Always refresh from Gist in background — fast, doesn't block
+  fetchData();
 });
 
 // ── Handle tab resume (Chrome Android suspension fix) ────────────────────────
@@ -1494,7 +1599,7 @@ window.addEventListener('load', () => {
 // treat the resume as a genuine "coming back after suspension" event.
 // This prevents maximising/resizing the window from triggering a full refetch.
 const MIN_HIDDEN_MS    = 30 * 1000;   // 30 seconds — filters out window focus events
-const STALE_AFTER_MS   = 30 * 60 * 1000; // 30 minutes — data considered stale
+const STALE_AFTER_MS   = 4 * 60 * 60 * 1000; // 4 hours — matches Gist push schedule
 
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
