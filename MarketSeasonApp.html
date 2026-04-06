@@ -627,7 +627,7 @@ async function fetchData(manual = false, forceLive = false) {
     try { localStorage.setItem(CACHE_KEY, JSON.stringify(liveData)); } catch(e) {}
     renderAll(liveData);
 
-    const pushedAt = liveData.refreshed || null;
+    const pushedAt = liveData.pushedAt || liveData.refreshed || null;
     const age = formatAge(pushedAt);
     const isStale = pushedAt && (Date.now() - new Date(pushedAt).getTime()) > GIST_MAX_AGE_MS;
 
@@ -635,8 +635,17 @@ async function fetchData(manual = false, forceLive = false) {
       statusEl.textContent = 'live · ' + new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
       if (sourceEl) sourceEl.textContent = '● live';
     } else {
-      statusEl.textContent = age ? 'snapshot · ' + age : 'snapshot';
-      if (sourceEl) sourceEl.textContent = (isStale ? '⚠ ' : '✓ ') + (age || '');
+      // Show both: when market data was captured and when AI was last refreshed
+      const dataAge = formatAge(liveData.refreshed);           // sheet recalc time
+      const aiAge   = formatAge(liveData.aiRefreshedAt || liveData.pushedAt); // last AI push
+      const pushAge = formatAge(liveData.pushedAt);            // last Gist write
+
+      if (dataAge && aiAge && dataAge !== aiAge) {
+        statusEl.textContent = 'data · ' + dataAge + '  ·  AI · ' + aiAge;
+      } else {
+        statusEl.textContent = pushAge ? 'updated · ' + pushAge : 'snapshot';
+      }
+      if (sourceEl) sourceEl.textContent = (isStale ? '⚠ ' : '✓ ') + (pushAge || '');
     }
 
     if (isStale) {
@@ -1241,7 +1250,7 @@ function renderEvents() {
     const list = document.getElementById('eventsList');
     const statusEl = document.getElementById('eventsStatus');
     const loading = document.getElementById('eventsLoading');
-    const age = formatAge(cached.refreshed);
+    const age = formatAge(cached.pushedAt || cached.refreshed);
     renderEventsData(cached.events || [], cached.forecast || '', statusEl, list, loading);
     statusEl.textContent = age ? 'snapshot · ' + age + ' · tap REFRESH ↗ for live' : 'cached';
     statusEl.style.display = 'block';
@@ -1261,7 +1270,7 @@ async function loadEvents(manual = false, forceLive = false) {
   // Use Gist-cached events unless forced live
   const cached = !forceLive && liveData?.cachedEvents;
   if (cached && !cached.error) {
-    const age = formatAge(cached.refreshed);
+    const age = formatAge(cached.pushedAt || cached.refreshed);
     eventsLastLoaded = Date.now();
     renderEventsData(cached.events || [], cached.forecast || '', statusEl, list, loading);
     statusEl.textContent = age ? 'snapshot · ' + age + ' · tap REFRESH ↗ for live' : 'cached';
@@ -1590,7 +1599,7 @@ window.addEventListener('load', () => {
         renderAll(liveData);
       }
       // Show age of cached data while background refresh runs
-      const age = liveData ? formatAge(liveData.refreshed) : null;
+      const age = liveData ? formatAge(liveData.pushedAt || liveData.refreshed) : null;
       document.getElementById('refreshStatus').textContent = age ? 'cached · ' + age : 'updating…';
       const sourceEl = document.getElementById('dataSource');
       if (sourceEl) sourceEl.textContent = '⟳ updating';
