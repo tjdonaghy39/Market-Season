@@ -479,6 +479,46 @@
   <div class="spacer"></div>
 </div>
 
+
+<!-- ── MACRO OUTLOOK ── -->
+<div class="page" id="page-macro">
+
+  <!-- Regime Probabilities -->
+  <div class="section-head">REGIME PROBABILITIES</div>
+  <div id="macroRegimeCard" class="card" style="margin-bottom:12px">
+    <div id="macroRegimeContent">
+      <div style="color:var(--muted);font-size:12px;text-align:center;padding:20px">
+        Loading macro analysis…
+      </div>
+    </div>
+    <div id="macroRegimeAge" style="font-size:10px;color:var(--muted);margin-top:8px;font-family:var(--mono)"></div>
+  </div>
+
+  <!-- Horizon Calls -->
+  <div class="section-head">HORIZON CALLS</div>
+  <div id="macroHorizonCard" class="card" style="margin-bottom:12px">
+    <div id="macroHorizonContent">
+      <div style="color:var(--muted);font-size:12px;text-align:center;padding:20px">—</div>
+    </div>
+  </div>
+
+  <!-- Risk Monitor -->
+  <div class="section-head" style="display:flex;justify-content:space-between;align-items:center">
+    <span>RISK MONITOR</span>
+    <span id="riskCount" style="font-size:10px;font-family:var(--mono);color:var(--muted)"></span>
+  </div>
+  <div id="riskMonitorList"></div>
+
+  <!-- Sources -->
+  <div id="macroSources" style="margin-top:12px;font-size:10px;color:var(--muted);font-family:var(--mono);padding:0 4px"></div>
+
+  <!-- Refresh button -->
+  <div style="text-align:center;margin-top:16px">
+    <button class="ai-run-btn" id="macroRefreshBtn" onclick="loadMacroOutlook(true)">REFRESH MACRO ↗</button>
+    <div id="macroStatus" style="font-size:10px;color:var(--muted);margin-top:6px"></div>
+  </div>
+</div>
+
 <!-- ── MARKETS ── -->
 <div class="page" id="page-markets">
   <div class="sec">LIVE MARKET DATA</div>
@@ -517,6 +557,7 @@
   <button class="nav-btn"        onclick="showPage('heat')"      id="nav-heat">     <span class="nav-icon">◐</span>Heat</button>
   <button class="nav-btn"        onclick="showPage('markets')"   id="nav-markets">  <span class="nav-icon">▦</span>Markets</button>
   <button class="nav-btn"        onclick="showPage('events')"    id="nav-events">   <span class="nav-icon">◷</span>Events</button>
+  <button class="nav-btn"        onclick="showPage('macro')"     id="nav-macro">    <span class="nav-icon">◈</span>Macro</button>
 </nav>
 
 <script>
@@ -1654,6 +1695,167 @@ document.addEventListener('visibilitychange', () => {
     }
   }
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// MACRO OUTLOOK — renderer
+// ════════════════════════════════════════════════════════════════════════════
+
+const RISK_STATE_STYLE = {
+  dormant:  { color: 'var(--muted)',  icon: '🟢', label: 'DORMANT'  },
+  watch:    { color: 'var(--amber)',  icon: '🟡', label: 'WATCH'    },
+  elevated: { color: 'var(--red)',    icon: '🔴', label: 'ELEVATED' },
+  critical: { color: '#ff0000',       icon: '🚨', label: 'CRITICAL' },
+};
+
+function loadMacroOutlook(forceLive = false) {
+  const btn = document.getElementById('macroRefreshBtn');
+  const statusEl = document.getElementById('macroStatus');
+  if (btn) btn.disabled = true;
+
+  // Try cached macro data first
+  const macro   = liveData?.macroAnalysis;
+  const risks   = liveData?.riskLibrary;
+  const macroAge = formatAge(liveData?.macroRefreshedAt);
+
+  if (macro && !macro.error && !forceLive) {
+    renderMacroAnalysis(macro, risks, macroAge);
+    if (statusEl) statusEl.textContent = macroAge ? 'snapshot · ' + macroAge : 'cached';
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  if (statusEl) statusEl.textContent = 'fetching live macro data…';
+  // Macro runs server-side on schedule — manual refresh triggers via sheet
+  // For now show what we have or a message
+  if (!macro) {
+    document.getElementById('macroRegimeContent').innerHTML =
+      '<div style="color:var(--muted);font-size:12px;padding:20px;text-align:center">' +
+      'No macro analysis available yet. Run <strong>runMacroManual()</strong> from Apps Script to populate.' +
+      '</div>';
+  }
+  if (btn) btn.disabled = false;
+}
+
+function renderMacroAnalysis(macro, riskLib, age) {
+  // ── Regime Probabilities ─────────────────────────────────────────────────
+  const rp = macro.regime_probabilities || {};
+  const regimes = [
+    { key: 'stagflation',  label: 'Stagflation',   color: 'var(--red)'    },
+    { key: 'soft_landing', label: 'Soft landing',   color: 'var(--green)'  },
+    { key: 'recession',    label: 'Recession',      color: 'var(--amber)'  },
+    { key: 'reflation',    label: 'Reflation',      color: 'var(--accent)' },
+  ].sort((a, b) => (rp[b.key] || 0) - (rp[a.key] || 0));
+
+  const regimeHTML = regimes.map(r => {
+    const pct = rp[r.key] || 0;
+    const bars = Math.round(pct / 5);
+    return `
+      <div style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+          <span style="font-size:11px;font-family:var(--mono);color:${r.color}">${r.label.toUpperCase()}</span>
+          <span style="font-size:13px;font-weight:700;color:${r.color}">${pct}%</span>
+        </div>
+        <div style="background:var(--surface2);border-radius:3px;height:6px;overflow:hidden">
+          <div style="width:${pct}%;background:${r.color};height:100%;border-radius:3px;transition:width 0.5s"></div>
+        </div>
+      </div>`;
+  }).join('');
+
+  document.getElementById('macroRegimeContent').innerHTML = regimeHTML +
+    (rp.reasoning ? `<div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5">${rp.reasoning}</div>` : '');
+  const ageEl = document.getElementById('macroRegimeAge');
+  if (ageEl && age) ageEl.textContent = 'updated · ' + age;
+
+  // ── Horizon Calls ──────────────────────────────────────────────────────
+  const st = macro.short_term  || {};
+  const mt = macro.medium_term || {};
+
+  const confColor = c => c >= 70 ? 'var(--green)' : c >= 50 ? 'var(--amber)' : 'var(--red)';
+  const alignColor = a => a?.startsWith('CONFIRMS') ? 'var(--green)' : a?.startsWith('CONFLICTS') ? 'var(--red)' : 'var(--muted)';
+
+  const renderHorizon = (h, label) => {
+    if (!h.call) return '';
+    const drivers = (h.data_driving || []).slice(0, 3)
+      .map(d => `<span style="font-size:9px;background:var(--surface2);padding:2px 6px;border-radius:4px;margin:2px;display:inline-block">${d.source}: ${d.value}</span>`)
+      .join('');
+    return `
+      <div style="margin-bottom:12px;padding:10px;background:var(--surface2);border-radius:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="font-size:10px;font-family:var(--mono);color:var(--accent)">${label}</span>
+          <span style="font-size:11px;font-weight:700;color:${confColor(h.confidence)}">${h.confidence || '—'}% confidence</span>
+        </div>
+        <div style="font-size:12px;color:var(--text);margin-bottom:6px;line-height:1.5">${h.call}</div>
+        <div style="margin-bottom:6px">${drivers}</div>
+        ${h.dashboard_alignment ? `<div style="font-size:10px;color:${alignColor(h.dashboard_alignment)};margin-bottom:4px">${h.dashboard_alignment}</div>` : ''}
+        ${h.exit_condition ? `<div style="font-size:10px;color:var(--muted)">Exit: ${h.exit_condition}</div>` : ''}
+      </div>`;
+  };
+
+  document.getElementById('macroHorizonContent').innerHTML =
+    renderHorizon(st, '⏱ SHORT TERM · ' + (st.horizon || '2-4 weeks')) +
+    renderHorizon(mt, '📅 MEDIUM TERM · ' + (mt.horizon || '2-3 months'));
+
+  // ── Risk Monitor ──────────────────────────────────────────────────────
+  const risks = riskLib?.risks || [];
+  const sorted = [...risks].sort((a, b) => {
+    const order = { critical:0, elevated:1, watch:2, dormant:3 };
+    return (order[a.state] || 3) - (order[b.state] || 3);
+  });
+
+  const riskCountEl = document.getElementById('riskCount');
+  const elevated = risks.filter(r => r.state === 'elevated' || r.state === 'critical').length;
+  const watching = risks.filter(r => r.state === 'watch').length;
+  if (riskCountEl) riskCountEl.textContent =
+    `${risks.length} risks · ${elevated} elevated · ${watching} watch`;
+
+  document.getElementById('riskMonitorList').innerHTML = sorted.map(r => {
+    const s = RISK_STATE_STYLE[r.state] || RISK_STATE_STYLE.dormant;
+    const cats = { geopolitical:'◆ GEO', structural:'◆ STR', macro_regime:'◆ MAC' };
+    const discovered = r.discoveredBy === 'ai_discovered'
+      ? '<span style="font-size:9px;background:rgba(124,111,255,.15);color:var(--accent);padding:2px 5px;border-radius:4px;margin-left:6px">AI DISCOVERED</span>'
+      : '';
+    return `
+      <div class="card" style="margin-bottom:8px;border-left:3px solid ${s.color}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <span style="font-size:11px;font-weight:600;color:${s.color}">${s.icon} ${s.label}</span>
+            <span style="font-size:9px;color:var(--muted);margin-left:8px;font-family:var(--mono)">${cats[r.category] || ''}</span>
+            ${discovered}
+          </div>
+          <span style="font-size:10px;color:var(--muted);font-family:var(--mono)">${r.stateUpdated ? formatAge(r.stateUpdated) : ''}</span>
+        </div>
+        <div style="font-size:12px;font-weight:600;color:var(--text);margin:4px 0">${r.name}</div>
+        ${r.state !== 'dormant'
+          ? `<div style="font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:4px">${r.mechanism || ''}</div>`
+          : ''}
+        ${r.monitoringNote
+          ? `<div style="font-size:10px;color:var(--amber);margin-top:4px">Watch: ${r.monitoringNote}</div>`
+          : `<div style="font-size:10px;color:var(--muted);margin-top:4px">${r.watchCondition || ''}</div>`}
+        ${r.state !== 'dormant' && r.dashboardImpact
+          ? `<div style="font-size:10px;color:var(--accent);margin-top:4px">Impact: ${r.dashboardImpact}</div>`
+          : ''}
+      </div>`;
+  }).join('');
+
+  // ── Sources ───────────────────────────────────────────────────────────
+  const dq = macro.data_quality || {};
+  const sourcesEl = document.getElementById('macroSources');
+  if (sourcesEl) {
+    sourcesEl.textContent =
+      `Sources: ${dq.sources_fetched || 0} fetched` +
+      (dq.sources_failed ? ` · ${dq.sources_failed} failed` : '') +
+      (dq.failed_sources?.length ? ` (${dq.failed_sources.join(', ')})` : '') +
+      (dq.confidence_note ? ` · ${dq.confidence_note}` : '');
+  }
+}
+
+// Auto-load when macro tab is shown
+const _origShowPage = showPage;
+function showPage(id) {
+  _origShowPage(id);
+  if (id === 'macro') loadMacroOutlook();
+}
+
 </script>
 </body>
 </html>
