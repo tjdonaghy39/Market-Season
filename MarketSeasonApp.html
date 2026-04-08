@@ -587,6 +587,7 @@ function showPage(id) {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('page-' + id).classList.add('active');
   document.getElementById('nav-' + id).classList.add('active');
+  if (id === 'macro') { setTimeout(loadMacroOutlook, 50); }
 }
 
 // ── Fetch helpers ────────────────────────────────────────────────────────────
@@ -1849,12 +1850,7 @@ function renderMacroAnalysis(macro, riskLib, age) {
   }
 }
 
-// Auto-load when macro tab is shown
-const _origShowPage = showPage;
-function showPage(id) {
-  _origShowPage(id);
-  if (id === 'macro') loadMacroOutlook();
-}
+// Macro tab auto-load is handled inline in showPage above
 
 </script>
 </body>
