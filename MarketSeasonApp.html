@@ -221,7 +221,7 @@
   .factor-basket-state.neutral{background:rgba(255,255,255,.06);color:var(--muted)}
   .factor-row{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
   .factor-row:last-child{border-bottom:none}
-  .factor-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .factor-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--muted)}
   .factor-name{font-size:12px;font-weight:500;flex:0 0 80px}
   .factor-signal{font-size:11px;color:var(--muted);flex:1;line-height:1.4}
   .factor-heat{font-family:var(--mono);font-size:11px;flex:0 0 60px;text-align:right}
@@ -314,7 +314,7 @@
     <div id="factorBasketSignal" style="padding:10px 14px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border);line-height:1.5"></div>
     <!-- Quality -->
     <div class="factor-row">
-      <div class="factor-dot" id="iwfqDot" style="background:var(--hint)"></div>
+      <div class="factor-dot" id="iwfqDot"></div>
       <div class="factor-name" style="color:var(--text)">IWFQ</div>
       <div class="factor-signal" id="iwfqSignal">Quality Factor — loading</div>
       <div class="factor-heat" id="iwfqHeat">—</div>
@@ -322,7 +322,7 @@
     </div>
     <!-- Value -->
     <div class="factor-row">
-      <div class="factor-dot" id="iwfvDot" style="background:var(--hint)"></div>
+      <div class="factor-dot" id="iwfvDot"></div>
       <div class="factor-name" style="color:var(--text)">IWFV</div>
       <div class="factor-signal" id="iwfvSignal">Value Factor — loading</div>
       <div class="factor-heat" id="iwfvHeat">—</div>
@@ -330,7 +330,7 @@
     </div>
     <!-- Momentum -->
     <div class="factor-row">
-      <div class="factor-dot" id="iwfmDot" style="background:var(--hint)"></div>
+      <div class="factor-dot" id="iwfmDot"></div>
       <div class="factor-name" style="color:var(--text)">IWFM</div>
       <div class="factor-signal" id="iwfmSignal">Momentum Factor — loading</div>
       <div class="factor-heat" id="iwfmHeat">—</div>
@@ -338,7 +338,7 @@
     </div>
     <!-- Gold Factor -->
     <div class="factor-row">
-      <div class="factor-dot" id="gldDot" style="background:var(--hint)"></div>
+      <div class="factor-dot" id="gldDot"></div>
       <div class="factor-name" style="color:var(--text)">GLD</div>
       <div class="factor-signal" id="gldSignal">Gold Factor — loading</div>
       <div class="factor-heat" id="gldHeat">—</div>
@@ -346,7 +346,7 @@
     </div>
     <!-- JEPG Factor -->
     <div class="factor-row">
-      <div class="factor-dot" id="jepgFacDot" style="background:var(--hint)"></div>
+      <div class="factor-dot" id="jepgFacDot"></div>
       <div class="factor-name" style="color:var(--text)">JEPG</div>
       <div class="factor-signal" id="jepgFacSignal">Covered Call — loading</div>
       <div class="factor-heat" id="jepgFacHeat">—</div>
@@ -880,10 +880,7 @@ function renderFactorBasket(d, signals) {
 
   if (stateEl) {
     stateEl.className = 'factor-basket-state ' + state;
-    stateEl.style.color = state === 'exit' ? 'var(--red)' :
-                          state === 'reduce' ? 'var(--amber)' :
-                          state === 'conflict' ? 'var(--amber)' :
-                          state === 'active' ? 'var(--green)' : 'var(--muted)';
+    // colour handled by CSS class
     stateEl.textContent = stateLabel;
   }
   if (sigEl) sigEl.textContent = basketText.replace(/▽▽|▽|▲▲|▲|◆|⚠/g,'').trim();
