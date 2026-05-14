@@ -1856,7 +1856,10 @@ function renderMacroAnalysis(macro, riskLib, age) {
   const risks = riskLib?.risks || [];
   const sorted = [...risks].sort((a, b) => {
     const order = { critical:0, elevated:1, watch:2, dormant:3 };
-    const stateDiff = (order[a.state] || 3) - (order[b.state] || 3);
+    // Use ?? (not ||) so critical (value 0) is not treated as falsy
+    const aOrder = order[a.state] ?? 3;
+    const bOrder = order[b.state] ?? 3;
+    const stateDiff = aOrder - bOrder;
     if (stateDiff !== 0) return stateDiff;
     // Within same severity: most recent first (stateUpdated descending)
     const aTime = a.stateUpdated ? new Date(a.stateUpdated).getTime() : 0;
