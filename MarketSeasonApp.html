@@ -1788,37 +1788,80 @@ function renderMacroAnalysis(macro, riskLib, age) {
   // ── Horizon Calls ──────────────────────────────────────────────────────
   const st = macro.short_term  || {};
   const mt = macro.medium_term || {};
+  const fc = macro.framework_comparison || {};
 
   const confColor = c => c >= 70 ? 'var(--green)' : c >= 50 ? 'var(--amber)' : 'var(--red)';
-  const alignColor = a => a?.startsWith('CONFIRMS') ? 'var(--green)' : a?.startsWith('CONFLICTS') ? 'var(--red)' : 'var(--muted)';
+  const alignColor = a => a === 'AGREE' ? 'var(--green)' : a === 'DISAGREE' ? 'var(--red)' : 'var(--muted)';
+  const alignLabel = a => a === 'AGREE' ? '✓ AGREE' : a === 'DISAGREE' ? '⚠ DISAGREE' : '○ NO FRAMEWORK SIGNAL';
+
+  // Build alignment lookup so each call can show its alignment inline
+  const alignmentMap = {};
+  (fc.call_alignments || []).forEach(a => {
+    if (a.position) alignmentMap[a.position] = a;
+  });
+
+  const renderCall = (call) => {
+    if (!call || !call.position) return '';
+    const align = alignmentMap[call.position];
+    const contrarianBadge = call.contrarian
+      ? '<span style="font-size:9px;background:rgba(255,140,0,.18);color:var(--amber);padding:2px 6px;border-radius:4px;margin-left:6px;font-family:var(--mono)">CONTRARIAN</span>'
+      : '';
+    const assetBadge = call.asset_class
+      ? `<span style="font-size:9px;background:var(--surface2);color:var(--muted);padding:2px 6px;border-radius:4px;margin-left:6px;font-family:var(--mono);text-transform:uppercase">${call.asset_class}</span>`
+      : '';
+    return `
+      <div style="margin-bottom:10px;padding:10px;background:var(--surface2);border-radius:8px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;gap:8px">
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600;color:var(--text);line-height:1.4">${call.position}</div>
+            <div style="margin-top:3px">${assetBadge}${contrarianBadge}</div>
+          </div>
+          <span style="font-size:11px;font-weight:700;color:${confColor(call.confidence)};white-space:nowrap">${call.confidence || '—'}%</span>
+        </div>
+        ${call.thesis ? `<div style="font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:6px">${call.thesis}</div>` : ''}
+        ${call.key_risk ? `<div style="font-size:10px;color:var(--amber);margin-bottom:3px">Risk: ${call.key_risk}</div>` : ''}
+        ${call.exit_trigger ? `<div style="font-size:10px;color:var(--muted);margin-bottom:3px">Exit: ${call.exit_trigger}</div>` : ''}
+        ${align ? `<div style="font-size:10px;color:${alignColor(align.alignment)};margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.06)">${alignLabel(align.alignment)} · ${align.framework_signal || ''}${align.divergence_meaning ? ' — ' + align.divergence_meaning : ''}</div>` : ''}
+      </div>`;
+  };
 
   const renderHorizon = (h, label) => {
-    if (!h.call) return '';
-    const drivers = (h.data_driving || []).slice(0, 3)
-      .map(d => `<span style="font-size:9px;background:var(--surface2);padding:2px 6px;border-radius:4px;margin:2px;display:inline-block">${d.source}: ${d.value}</span>`)
-      .join('');
+    // Support new array structure, fall back to legacy single-call
+    const calls = h.calls && Array.isArray(h.calls) ? h.calls
+                : h.call ? [{ position: h.call, thesis: '', confidence: h.confidence, exit_trigger: h.exit_condition }]
+                : [];
+    if (calls.length === 0) return '';
     return `
-      <div style="margin-bottom:12px;padding:10px;background:var(--surface2);border-radius:8px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <span style="font-size:10px;font-family:var(--mono);color:var(--accent)">${label}</span>
-          <span style="font-size:11px;font-weight:700;color:${confColor(h.confidence)}">${h.confidence || '—'}% confidence</span>
-        </div>
-        <div style="font-size:12px;color:var(--text);margin-bottom:6px;line-height:1.5">${h.call}</div>
-        <div style="margin-bottom:6px">${drivers}</div>
-        ${h.dashboard_alignment ? `<div style="font-size:10px;color:${alignColor(h.dashboard_alignment)};margin-bottom:4px">${h.dashboard_alignment}</div>` : ''}
-        ${h.exit_condition ? `<div style="font-size:10px;color:var(--muted)">Exit: ${h.exit_condition}</div>` : ''}
+      <div style="margin-bottom:14px">
+        <div style="font-size:10px;font-family:var(--mono);color:var(--accent);margin-bottom:8px;letter-spacing:0.5px">${label}</div>
+        ${calls.map(renderCall).join('')}
+      </div>`;
+  };
+
+  const renderFrameworkComparison = () => {
+    if (!fc.summary && !(fc.call_alignments && fc.call_alignments.length)) return '';
+    return `
+      <div style="margin-top:16px;padding:12px;background:var(--surface);border-radius:8px;border:1px solid rgba(124,111,255,.25)">
+        <div style="font-size:11px;font-family:var(--mono);color:var(--accent);margin-bottom:8px;letter-spacing:0.5px">⚖ FRAMEWORK COMPARISON</div>
+        ${fc.summary ? `<div style="font-size:11px;color:var(--text);line-height:1.5">${fc.summary}</div>` : ''}
       </div>`;
   };
 
   document.getElementById('macroHorizonContent').innerHTML =
     renderHorizon(st, '⏱ SHORT TERM · ' + (st.horizon || '2-4 weeks')) +
-    renderHorizon(mt, '📅 MEDIUM TERM · ' + (mt.horizon || '2-3 months'));
+    renderHorizon(mt, '📅 MEDIUM TERM · ' + (mt.horizon || '2-3 months')) +
+    renderFrameworkComparison();
 
   // ── Risk Monitor ──────────────────────────────────────────────────────
   const risks = riskLib?.risks || [];
   const sorted = [...risks].sort((a, b) => {
     const order = { critical:0, elevated:1, watch:2, dormant:3 };
-    return (order[a.state] || 3) - (order[b.state] || 3);
+    const stateDiff = (order[a.state] || 3) - (order[b.state] || 3);
+    if (stateDiff !== 0) return stateDiff;
+    // Within same severity: most recent first (stateUpdated descending)
+    const aTime = a.stateUpdated ? new Date(a.stateUpdated).getTime() : 0;
+    const bTime = b.stateUpdated ? new Date(b.stateUpdated).getTime() : 0;
+    return bTime - aTime;
   });
 
   const riskCountEl = document.getElementById('riskCount');
