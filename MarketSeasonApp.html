@@ -551,6 +551,46 @@
   <div class="spacer"></div>
 </div>
 
+<!-- ── OPPORTUNITY SCAN ── -->
+<div class="page" id="page-opportunity">
+  <div class="sec">OPPORTUNITY SCAN</div>
+
+  <div style="padding:0 14px 8px 14px">
+    <div style="background:rgba(124,111,255,.08);border:1px solid rgba(124,111,255,.25);border-radius:10px;padding:12px;margin-bottom:14px">
+      <div style="font-size:10px;font-family:var(--mono);color:var(--accent);margin-bottom:6px;letter-spacing:0.5px">FOR NEW CAPITAL DEPLOYMENT ONLY</div>
+      <div style="font-size:11px;color:var(--text);line-height:1.5">
+        These are positions where existing signals suggest the bearish consensus may be wrong — for deploying spare cash, NOT for rotating out of current holdings. Use as a research aid; evaluate each thesis on its own merits. Timing-based exits are explicitly out of scope (the framework is not a market timer).
+      </div>
+    </div>
+  </div>
+
+  <!-- Synthesis: regime context -->
+  <div class="section-head">CURRENT REGIME CONTEXT</div>
+  <div class="card" style="margin-bottom:14px">
+    <div id="oppRegimeContext" style="padding:10px 14px;font-size:12px;color:var(--text);line-height:1.5">
+      <div style="color:var(--muted)">—</div>
+    </div>
+  </div>
+
+  <!-- Candidates -->
+  <div class="section-head">CANDIDATES (re-ranked from existing signals)</div>
+  <div id="oppCandidatesList" style="padding:0 14px">
+    <div style="color:var(--muted);font-size:12px;padding:20px;text-align:center">Loading opportunities…</div>
+  </div>
+
+  <!-- Methodology footer -->
+  <div style="padding:14px;margin-top:14px">
+    <div style="background:var(--surface);border-radius:10px;padding:10px 14px;font-size:10px;color:var(--muted);line-height:1.5;font-family:var(--mono)">
+      <div style="margin-bottom:4px"><strong style="color:var(--text)">Methodology:</strong></div>
+      Re-ranks existing dashboard data through an opportunity lens.
+      Sources: framework heat scores · regime score · risk monitor states · horizon calls (incl. contrarian flag) · framework comparison alignments · RSS sentiment.
+      No new AI calls — uses cached macro output.
+    </div>
+  </div>
+
+  <div class="spacer"></div>
+</div>
+
 <!-- BOTTOM NAV -->
 <nav class="bottom-nav">
   <button class="nav-btn active" onclick="showPage('overview')"  id="nav-overview"> <span class="nav-icon">◈</span>Overview</button>
@@ -560,6 +600,7 @@
   <button class="nav-btn"        onclick="showPage('markets')"   id="nav-markets">  <span class="nav-icon">▦</span>Markets</button>
   <button class="nav-btn"        onclick="showPage('events')"    id="nav-events">   <span class="nav-icon">◷</span>Events</button>
   <button class="nav-btn"        onclick="showPage('macro')"     id="nav-macro">    <span class="nav-icon">◈</span>Macro</button>
+  <button class="nav-btn"        onclick="showPage('opportunity')" id="nav-opportunity"> <span class="nav-icon">💎</span>Opps</button>
 </nav>
 
 <script>
@@ -590,6 +631,7 @@ function showPage(id) {
   document.getElementById('page-' + id).classList.add('active');
   document.getElementById('nav-' + id).classList.add('active');
   if (id === 'macro') { setTimeout(loadMacroOutlook, 50); }
+  if (id === 'opportunity') { setTimeout(renderOpportunityScan, 50); }
 }
 
 // ── Fetch helpers ────────────────────────────────────────────────────────────
@@ -1753,6 +1795,206 @@ function loadMacroOutlook(forceLive = false) {
       '</div>';
   }
   if (btn) btn.disabled = false;
+}
+
+// ── Opportunity Scan ──────────────────────────────────────────────────────
+// Re-ranks existing dashboard data through an opportunity lens.
+// Pure presentation layer — no new AI calls, no new analysis.
+// Surfaces assets where the bearish consensus may not hold.
+function renderOpportunityScan() {
+  const d = liveData;
+  if (!d) {
+    document.getElementById('oppCandidatesList').innerHTML =
+      '<div style="color:var(--muted);font-size:12px;padding:20px;text-align:center">Load dashboard data first.</div>';
+    return;
+  }
+
+  // ── Build regime context synthesis ─────────────────────────────────────
+  const engine     = d.engine || {};
+  const macro      = d.macroAnalysis || {};
+  const risks      = d.riskLibrary?.risks || [];
+  const score      = engine.score;
+  const season     = engine.season || '—';
+  const confidence = engine.confidence || '—';
+
+  const criticalRisks = risks.filter(r => r.state === 'critical');
+  const elevatedRisks = risks.filter(r => r.state === 'elevated');
+
+  let contextLines = [];
+  contextLines.push('<strong style="color:var(--text)">Score:</strong> ' + score + '/10 · <strong style="color:var(--text)">Season:</strong> ' + season);
+  if (criticalRisks.length || elevatedRisks.length) {
+    const parts = [];
+    if (criticalRisks.length) parts.push(criticalRisks.length + ' critical');
+    if (elevatedRisks.length) parts.push(elevatedRisks.length + ' elevated');
+    contextLines.push('<strong style="color:var(--text)">Active risks:</strong> ' + parts.join(' · '));
+  }
+
+  // Pull regime probabilities if available
+  if (macro.regime_probabilities) {
+    const rp = macro.regime_probabilities;
+    const top = Object.entries(rp).sort((a,b) => b[1] - a[1]).slice(0, 2);
+    if (top.length) {
+      contextLines.push('<strong style="color:var(--text)">Regime tilt:</strong> ' +
+        top.map(([k,v]) => k + ' ' + v + '%').join(' · '));
+    }
+  }
+
+  document.getElementById('oppRegimeContext').innerHTML = contextLines.join('<br>');
+
+  // ── Build candidate list ───────────────────────────────────────────────
+  const candidates = [];
+
+  // ── CATEGORY 1: Beaten-down assets with early recovery signals ────────
+  // Asset is significantly down on 60D but heat/5D showing recovery
+  const allAssets = [];
+  ['equities', 'bonds', 'commodities', 'tactical'].forEach(group => {
+    Object.entries(d[group] || {}).forEach(([key, asset]) => {
+      if (!asset || typeof asset.heat !== 'number' || typeof asset.d60 !== 'number') return;
+      allAssets.push({ group, key, asset });
+    });
+  });
+
+  // Filter: significantly down on 60D (< -8%) AND 5D positive (recovery starting)
+  allAssets
+    .filter(({ asset }) => asset.d60 < -0.08 && asset.d5 > 0)
+    .forEach(({ asset, key }) => {
+      const recoveryScore = (asset.d5 * 100) - (asset.d60 * 100 * 0.5); // weight: 5D recovery vs depth of decline
+      candidates.push({
+        type: 'beaten_down_recovery',
+        ticker: key.toUpperCase(),
+        name: asset.name,
+        score: recoveryScore,
+        d60: asset.d60,
+        d5: asset.d5,
+        heat: asset.heat,
+        thesis: 'Down ' + (asset.d60*100).toFixed(1) + '% on 60D but 5D showing recovery (+' + (asset.d5*100).toFixed(1) + '%). Heat at ' + (asset.heat*100).toFixed(2) + '%. Bearish consensus may be peaking.',
+        risk: 'Recovery could be a dead-cat bounce. Wait for 20D heat to confirm before sizing up.',
+      });
+    });
+
+  // ── CATEGORY 2: Contrarian horizon calls from AI ───────────────────────
+  const horizonCalls = [];
+  ['short_term', 'medium_term'].forEach(horizon => {
+    const h = macro[horizon];
+    if (h && h.calls && Array.isArray(h.calls)) {
+      h.calls.forEach(call => horizonCalls.push({ ...call, horizon }));
+    }
+  });
+
+  const fcMap = {};
+  if (macro.framework_comparison && macro.framework_comparison.call_alignments) {
+    macro.framework_comparison.call_alignments.forEach(a => {
+      if (a.position) fcMap[a.position] = a;
+    });
+  }
+
+  horizonCalls
+    .filter(call => call.contrarian === true && call.confidence >= 50)
+    .forEach(call => {
+      const align = fcMap[call.position] || {};
+      const horizonLabel = call.horizon === 'short_term' ? 'SHORT TERM (2-4w)' : 'MEDIUM TERM (2-3m)';
+      candidates.push({
+        type: 'contrarian_call',
+        ticker: '—',
+        name: call.position,
+        score: call.confidence,
+        thesis: call.thesis,
+        risk: call.key_risk,
+        exitTrigger: call.exit_trigger,
+        confidence: call.confidence,
+        horizonLabel,
+        alignment: align.alignment || 'NO_FRAMEWORK_SIGNAL',
+        frameworkSignal: align.framework_signal,
+        divergenceMeaning: align.divergence_meaning,
+        assetClass: call.asset_class || '',
+      });
+    });
+
+  // ── CATEGORY 3: No-framework-signal calls (gap-filling) ───────────────
+  horizonCalls
+    .filter(call => !call.contrarian && call.confidence >= 60)
+    .forEach(call => {
+      const align = fcMap[call.position] || {};
+      if (align.alignment !== 'NO_FRAMEWORK_SIGNAL') return; // only gap-fillers here
+      const horizonLabel = call.horizon === 'short_term' ? 'SHORT TERM (2-4w)' : 'MEDIUM TERM (2-3m)';
+      candidates.push({
+        type: 'gap_fill',
+        ticker: '—',
+        name: call.position,
+        score: call.confidence - 5, // slightly behind contrarian
+        thesis: call.thesis,
+        risk: call.key_risk,
+        exitTrigger: call.exit_trigger,
+        confidence: call.confidence,
+        horizonLabel,
+        alignment: 'NO_FRAMEWORK_SIGNAL',
+        assetClass: call.asset_class || '',
+      });
+    });
+
+  // Sort by score descending
+  candidates.sort((a, b) => b.score - a.score);
+
+  // ── Render ─────────────────────────────────────────────────────────────
+  const listEl = document.getElementById('oppCandidatesList');
+
+  if (candidates.length === 0) {
+    listEl.innerHTML =
+      '<div style="background:var(--surface);border-radius:10px;padding:16px;text-align:center;color:var(--muted);font-size:12px;line-height:1.5">' +
+      'No clear opportunity candidates surfaced in current data.<br>' +
+      '<span style="font-size:10px">Either the bearish consensus is well-supported, or the AI has not flagged any contrarian or gap-filling positions yet. Run macro refresh and re-check.</span>' +
+      '</div>';
+    return;
+  }
+
+  const typeLabel = t => ({
+    beaten_down_recovery: '⤴ BEATEN-DOWN · EARLY RECOVERY',
+    contrarian_call: '⚡ CONTRARIAN CALL',
+    gap_fill: '○ GAP-FILL (not in framework)',
+  }[t] || t);
+
+  const typeColor = t => ({
+    beaten_down_recovery: 'var(--green)',
+    contrarian_call: 'var(--amber)',
+    gap_fill: 'var(--accent)',
+  }[t] || 'var(--muted)');
+
+  listEl.innerHTML = candidates.map((c, idx) => {
+    const rank = idx + 1;
+    let extra = '';
+    if (c.type === 'beaten_down_recovery') {
+      extra = '<div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--mono)">60D ' + (c.d60*100).toFixed(1) + '% · 5D +' + (c.d5*100).toFixed(1) + '% · Heat ' + (c.heat*100).toFixed(2) + '%</div>';
+    } else {
+      const badges = [];
+      if (c.horizonLabel) badges.push('<span style="font-size:9px;background:var(--surface2);color:var(--muted);padding:2px 6px;border-radius:4px;font-family:var(--mono)">' + c.horizonLabel + '</span>');
+      if (c.assetClass) badges.push('<span style="font-size:9px;background:var(--surface2);color:var(--muted);padding:2px 6px;border-radius:4px;font-family:var(--mono);text-transform:uppercase">' + c.assetClass + '</span>');
+      if (c.confidence) badges.push('<span style="font-size:9px;color:' + (c.confidence >= 70 ? 'var(--green)' : c.confidence >= 50 ? 'var(--amber)' : 'var(--muted)') + ';padding:2px 6px;border-radius:4px;font-family:var(--mono);font-weight:700">' + c.confidence + '%</span>');
+      extra = '<div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap">' + badges.join('') + '</div>';
+    }
+
+    let alignmentLine = '';
+    if (c.type === 'contrarian_call' || c.type === 'gap_fill') {
+      const alignColor = c.alignment === 'AGREE' ? 'var(--green)' : c.alignment === 'DISAGREE' ? 'var(--red)' : 'var(--muted)';
+      const alignText = c.alignment === 'NO_FRAMEWORK_SIGNAL' ? 'Framework has no signal — pure AI call' :
+                        c.alignment === 'DISAGREE' ? 'Framework disagrees: ' + (c.frameworkSignal || '') :
+                        'Framework agrees: ' + (c.frameworkSignal || '');
+      alignmentLine = '<div style="font-size:10px;color:' + alignColor + ';margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.06)">' + alignText + (c.divergenceMeaning ? ' — ' + c.divergenceMeaning : '') + '</div>';
+    }
+
+    return '<div style="margin-bottom:10px;padding:12px;background:var(--surface);border-radius:10px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">' +
+        '<div style="flex:1">' +
+          '<div style="font-size:9px;font-family:var(--mono);color:' + typeColor(c.type) + ';margin-bottom:4px;letter-spacing:0.5px">#' + rank + ' · ' + typeLabel(c.type) + '</div>' +
+          '<div style="font-size:13px;font-weight:600;color:var(--text);line-height:1.3">' + c.name + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:6px">' + c.thesis + '</div>' +
+      (c.risk ? '<div style="font-size:10px;color:var(--amber);margin-bottom:3px">Risk: ' + c.risk + '</div>' : '') +
+      (c.exitTrigger ? '<div style="font-size:10px;color:var(--muted)">Exit: ' + c.exitTrigger + '</div>' : '') +
+      extra +
+      alignmentLine +
+    '</div>';
+  }).join('');
 }
 
 function renderMacroAnalysis(macro, riskLib, age) {
